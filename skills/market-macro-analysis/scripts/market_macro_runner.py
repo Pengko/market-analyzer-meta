@@ -29,7 +29,7 @@ from typing import Any
 
 # ── 路径设置 ──────────────────────────────────────────
 SCRIPT_DIR = Path(__file__).resolve().parent
-META_ROOT = SCRIPT_DIR.parents[1]  # market-analyzer-meta/
+META_ROOT = SCRIPT_DIR.parents[2]  # market-analyzer-meta/
 SDA_SCRIPTS = META_ROOT / "skills" / "stock-deep-analysis" / "scripts"
 sys.path.insert(0, str(SDA_SCRIPTS))
 
@@ -47,7 +47,7 @@ THEME_DATA_ROOT = Path.home() / "quant-data" / "tushare" / "股票数据" / "the
 # ═══════════════════════════════════════════════════════
 
 def fetch_index_quotes(trade_date_compact: str) -> dict[str, dict]:
-    """获取指数行情：优先本地，缺失时 fallback 到实时 API。"""
+    """获取指数行情：优先本地 parquet，缺失时用 Tushare API 补全。"""
     import pyarrow.parquet as pq
 
     index_root = Path.home() / "quant-data" / "tushare" / "指数数据" / "index_daily"
@@ -70,50 +70,45 @@ def fetch_index_quotes(trade_date_compact: str) -> dict[str, dict]:
             result[name] = {
                 "close": float(r.get("close", 0) or 0),
                 "pct_change": float(r.get("pct_chg", 0) or 0),
-                "amount_yi": None,
+                "amount_yi": round(float(r.get("amount", 0) or 0) / 1e4, 2),
                 "data_type": "local",
             }
         except Exception:
             missing.append((name, code))
 
-    # 本地缺失的指数，用实时 API 补充
+    # 本地缺失时用 Tushare API 补全
     if missing:
-        _supplement_with_realtime(result, {name: code for name, code in missing})
+        _supplement_with_tushare(result, trade_date_compact, {name: code for name, code in missing})
 
     return result
 
 
-def _supplement_with_realtime(result: dict, missing_names: dict = None) -> None:
-    """用腾讯实时 API 补充指数数据。"""
-    import urllib.request
-
-    all_codes = {"上证指数": "sh000001", "深证成指": "sz399001", "创业板指": "sz399006"}
-    codes = {name: code for name, code in all_codes.items() if missing_names is None or name in missing_names}
-    if not codes:
+def _supplement_with_tushare(result: dict, trade_date_compact: str, missing_names: dict) -> None:
+    """用 Tushare index_daily API 补全缺失的指数数据。"""
+    try:
+        import sys
+        tushare_dir = str(META_ROOT / "skills" / "tushare-pro")
+        if tushare_dir not in sys.path:
+            sys.path.insert(0, tushare_dir)
+        from utils.tushare_client import create_pro_api
+        pro = create_pro_api(timeout=15)
+    except Exception:
         return
 
-    url = f"http://qt.gtimg.cn/q={','.join(codes.values())}"
-    try:
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            raw = resp.read().decode("gb2312", errors="replace")
-        for name, code in codes.items():
-            marker = f'v_{code}="'
-            start = raw.find(marker)
-            if start < 0:
+    for name, ts_code in missing_names.items():
+        try:
+            df = pro.index_daily(ts_code=ts_code, trade_date=trade_date_compact)
+            if df.empty:
                 continue
-            start += len(marker)
-            end = raw.find('"', start)
-            fields = raw[start:end].split("~")
-            if len(fields) >= 38:
-                result[name] = {
-                    "close": float(fields[3]) if fields[3] else None,
-                    "pct_change": float(fields[32]) if fields[32] else None,
-                    "amount_yi": round(float(fields[37]) / 10000, 2) if fields[37] else None,
-                    "data_type": "realtime",
-                }
-    except Exception:
-        pass
+            r = df.iloc[0]
+            result[name] = {
+                "close": float(r.get("close", 0) or 0),
+                "pct_change": float(r.get("pct_chg", 0) or 0),
+                "amount_yi": round(float(r.get("amount", 0) or 0) / 1e5, 2),  # Tushare amount 单位是千元
+                "data_type": "tushare",
+            }
+        except Exception:
+            continue
 
 
 def analyze_market_environment(trade_date_compact: str) -> dict[str, Any]:

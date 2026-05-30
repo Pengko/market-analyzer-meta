@@ -134,7 +134,6 @@ def load_dc_concept(trade_date_compact: str) -> list[dict]:
     df = pq.read_table(path).to_pandas()
     day_df = df[df["trade_date"] == trade_date_compact]
     if day_df.empty:
-        # 尝试最近日期
         latest = df["trade_date"].max()
         day_df = df[df["trade_date"] == latest]
 
@@ -155,6 +154,146 @@ def load_dc_concept(trade_date_compact: str) -> list[dict]:
             "lead_stock_pct_change": float(row.get("lead_stock_pct_change", 0) or 0),
         })
 
+    return records
+
+
+# ── 涨停数据加载 ──────────────────────────────────────
+
+STOCK_DATA_ROOT = Path.home() / "quant-data" / "tushare" / "股票数据"
+
+
+def load_limit_cpt_list(trade_date_compact: str) -> list[dict]:
+    """加载板块级涨停统计（limit_cpt_list）。"""
+    import pyarrow.parquet as pq
+
+    path = STOCK_DATA_ROOT / "limit_cpt_list" / "limit_cpt_list.parquet"
+    if not path.exists():
+        return []
+
+    df = pq.read_table(path).to_pandas()
+    day_df = df[df["trade_date"].astype(str) == trade_date_compact]
+    if day_df.empty:
+        return []
+
+    records = []
+    for _, row in day_df.iterrows():
+        records.append({
+            "ts_code": str(row.get("ts_code", "")),
+            "name": str(row.get("name", "")),
+            "days": int(row.get("days", 0) or 0),
+            "up_stat": str(row.get("up_stat", "")),
+            "cons_nums": int(row.get("cons_nums", 0) or 0),
+            "up_nums": int(row.get("up_nums", 0) or 0),
+            "pct_chg": float(row.get("pct_chg", 0) or 0),
+            "rank": int(row.get("rank", 0) or 0),
+        })
+    records.sort(key=lambda x: x["up_nums"], reverse=True)
+    return records
+
+
+def load_limit_list_d(trade_date_compact: str) -> list[dict]:
+    """加载涨停个股明细（limit_list_d 东财格式）。"""
+    import pyarrow.parquet as pq
+
+    path = STOCK_DATA_ROOT / "limit_list_d" / "limit_list_d.parquet"
+    if not path.exists():
+        return []
+
+    df = pq.read_table(path).to_pandas()
+    day_df = df[df["trade_date"].astype(str) == trade_date_compact]
+    if day_df.empty:
+        return []
+
+    records = []
+    for _, row in day_df.iterrows():
+        records.append({
+            "ts_code": str(row.get("ts_code", "")),
+            "name": str(row.get("name", "")),
+            "industry": str(row.get("industry", "")),
+            "close": float(row.get("close", 0) or 0),
+            "pct_chg": float(row.get("pct_chg", 0) or 0),
+            "amount": float(row.get("amount", 0) or 0),
+            "first_time": str(row.get("first_time", "")),
+            "last_time": str(row.get("last_time", "")),
+            "open_times": int(row.get("open_times", 0) or 0),
+            "up_stat": str(row.get("up_stat", "")),
+            "limit_times": float(row.get("limit_times", 0) or 0),
+            "limit": str(row.get("limit", "")),
+            "turnover_ratio": float(row.get("turnover_ratio", 0) or 0),
+        })
+    return records
+
+
+def load_limit_list_ths(trade_date_compact: str) -> list[dict]:
+    """加载涨停个股明细（limit_list_ths 同花顺格式，含封单比/强度）。"""
+    import pyarrow.parquet as pq
+
+    year = trade_date_compact[:4]
+    path = STOCK_DATA_ROOT / "limit_list_ths" / f"{year}.parquet"
+    if not path.exists():
+        return []
+
+    df = pq.read_table(path).to_pandas()
+    day_df = df[df["trade_date"].astype(str) == trade_date_compact]
+    if day_df.empty:
+        return []
+
+    records = []
+    for _, row in day_df.iterrows():
+        limit_val = str(row.get("limit", ""))
+        # 只取涨停（U），跳过跌停（D）
+        if limit_val != "U":
+            continue
+        records.append({
+            "ts_code": str(row.get("ts_code", "")),
+            "name": str(row.get("name", "")),
+            "close": float(row.get("close", 0) or 0),
+            "pct_chg": float(row.get("pct_chg", 0) or 0),
+            "fc_ratio": float(row.get("fc_ratio", 0) or 0),
+            "fl_ratio": float(row.get("fl_ratio", 0) or 0),
+            "strth": float(row.get("strth", 0) or 0),
+            "lu_desc": str(row.get("lu_desc", "")),
+            "tag": str(row.get("tag", "")),
+            "status": str(row.get("status", "")),
+            "first_time": str(row.get("first_time", "")),
+            "last_time": str(row.get("last_time", "")),
+            "open_times": int(row.get("open_times", 0) or 0),
+            "turnover_rate": float(row.get("turnover_rate", 0) or 0),
+        })
+    return records
+
+
+def load_limit_step(trade_date_compact: str) -> list[dict]:
+    """加载连板阶梯数据（limit_step）。"""
+    import pyarrow.parquet as pq
+
+    year = trade_date_compact[:4]
+    path = STOCK_DATA_ROOT / "limit_step" / f"{year}.parquet"
+    if not path.exists():
+        # 尝试 CSV
+        csv_path = STOCK_DATA_ROOT / "limit_step" / "limit_step.csv"
+        if csv_path.exists():
+            import pandas as pd
+            df = pd.read_csv(csv_path)
+        else:
+            return []
+    else:
+        df = pq.read_table(path).to_pandas()
+
+    day_df = df[df["trade_date"].astype(str) == trade_date_compact]
+    if day_df.empty:
+        # 尝试最新日期
+        latest = df["trade_date"].max()
+        day_df = df[df["trade_date"] == latest]
+
+    records = []
+    for _, row in day_df.iterrows():
+        records.append({
+            "ts_code": str(row.get("ts_code", "")),
+            "name": str(row.get("name", "")),
+            "nums": int(row.get("nums", 0) or 0),
+        })
+    records.sort(key=lambda x: x["nums"], reverse=True)
     return records
 
 
@@ -229,14 +368,13 @@ def load_dc_member_concept(trade_date_compact: str, theme_code: str) -> list[dic
 
 
 def analyze_sector_hotspots(trade_date_compact: str, top_n: int = 10) -> dict[str, Any]:
-    """Step 2: 板块热点分析（DC 题材 + 概念板块）。"""
+    """Step 2: 板块热点分析（DC 题材 + 概念板块 + 涨停数据）。"""
 
     # ── 题材层（dc_concept）──
     concepts = load_dc_concept(trade_date_compact)
     if not concepts:
         return {"status": "missing", "reason": "无 DC 题材数据", "themes": [], "sectors": []}
 
-    # 按热度排序取 TOP N
     concepts.sort(key=lambda x: x.get("hot", 0), reverse=True)
     hot_themes = concepts[:top_n]
 
@@ -245,13 +383,31 @@ def analyze_sector_hotspots(trade_date_compact: str, top_n: int = 10) -> dict[st
     daily_records.sort(key=lambda x: x.get("pct_change", 0), reverse=True)
     hot_sectors = daily_records[:top_n]
 
-    # ── 涨停数据（kpl_list）──
-    kpl_data = load_kpl_list(trade_date_compact)
+    # ── 涨停数据 ──
+    limit_cpt = load_limit_cpt_list(trade_date_compact)  # 板块级涨停统计
+    limit_d = load_limit_list_d(trade_date_compact)       # 涨停个股明细（东财）
+    limit_ths = load_limit_list_ths(trade_date_compact)   # 涨停个股明细（同花顺）
+    limit_step = load_limit_step(trade_date_compact)       # 连板阶梯
+    kpl_data = load_kpl_list(trade_date_compact)           # 开盘啦涨停
+
+    # ── 涨停统计 ──
+    total_lu = len(limit_d) if limit_d else 0
+    first_board = len([r for r in limit_d if r.get("up_stat", "") == "首板"]) if limit_d else 0
+    continuous_board = len([r for r in limit_d if r.get("limit_times", 0) > 1]) if limit_d else 0
+
+    # 涨停题材分布（从 limit_cpt_list 取）
+    lu_themes = []
+    if limit_cpt:
+        for r in limit_cpt[:5]:
+            lu_themes.append({
+                "name": r["name"],
+                "up_nums": r["up_nums"],
+                "up_stat": r["up_stat"],
+            })
 
     # ── 板块轮动阶段判断 ──
-    # 简化：用题材热度集中度判断
-    total_hot = sum(t.get("theme_hot", 0) for t in concepts[:10])
-    top3_hot = sum(t.get("theme_hot", 0) for t in concepts[:3])
+    total_hot = sum(t.get("hot", 0) for t in concepts[:10])
+    top3_hot = sum(t.get("hot", 0) for t in concepts[:3])
     concentration = top3_hot / total_hot if total_hot > 0 else 0
 
     if concentration > 0.5:
@@ -266,7 +422,17 @@ def analyze_sector_hotspots(trade_date_compact: str, top_n: int = 10) -> dict[st
         "trade_date": trade_date_compact,
         "themes": hot_themes,
         "sectors": hot_sectors,
+        "limit_cpt": limit_cpt,
+        "limit_d": limit_d,
+        "limit_ths": limit_ths,
+        "limit_step": limit_step,
         "kpl": kpl_data,
+        "lu_stats": {
+            "total": total_lu,
+            "first_board": first_board,
+            "continuous": continuous_board,
+            "themes": lu_themes,
+        },
         "cycle": cycle,
         "concentration": round(concentration, 2),
         "top_theme": hot_themes[0]["theme_name"] if hot_themes else None,
@@ -279,11 +445,44 @@ def analyze_sector_hotspots(trade_date_compact: str, top_n: int = 10) -> dict[st
 # ═══════════════════════════════════════════════════════
 
 def find_leading_stocks(sector_result: dict, trade_date_compact: str, top_n: int = 5) -> list[dict]:
-    """Step 3: 从热点板块中找龙头个股。"""
+    """Step 3: 从热点板块 + 连板数据中找龙头个股。"""
     leading = []
     seen_codes = set()
 
-    # 从题材层取 lead_stock
+    # ── 连板股优先（limit_step）──
+    limit_step = sector_result.get("limit_step", [])
+    for s in limit_step[:5]:
+        code = s.get("ts_code", "")
+        if code and code not in seen_codes and s.get("nums", 0) >= 2:
+            seen_codes.add(code)
+            leading.append({
+                "ts_code": code,
+                "name": s.get("name", ""),
+                "source_theme": "连板",
+                "role": f"{s['nums']}连板",
+                "pct_change": 0,
+            })
+
+    # ── 涨停强度股（limit_list_ths，封单比高）──
+    limit_ths = sector_result.get("limit_ths", [])
+    if limit_ths:
+        # 按封单比排序
+        ths_sorted = sorted(limit_ths, key=lambda x: x.get("fc_ratio", 0), reverse=True)
+        for r in ths_sorted[:3]:
+            code = r.get("ts_code", "")
+            if code and code not in seen_codes:
+                seen_codes.add(code)
+                leading.append({
+                    "ts_code": code,
+                    "name": r.get("name", ""),
+                    "source_theme": r.get("lu_desc", "涨停"),
+                    "role": "强封板",
+                    "pct_change": r.get("pct_chg", 0),
+                    "fc_ratio": r.get("fc_ratio", 0),
+                    "strth": r.get("strth", 0),
+                })
+
+    # ── 从题材层取 lead_stock ──
     for theme in sector_result.get("themes", [])[:5]:
         code = theme.get("lead_stock_code", "")
         name = theme.get("lead_stock", "")
@@ -297,7 +496,7 @@ def find_leading_stocks(sector_result: dict, trade_date_compact: str, top_n: int
                 "pct_change": theme.get("lead_stock_pct_change", 0),
             })
 
-    # 从概念板块成分股中补充
+    # ── 从概念板块成分股中补充 ──
     for theme in sector_result.get("themes", [])[:3]:
         theme_code = theme.get("theme_code", "")
         if not theme_code:
@@ -529,6 +728,30 @@ def render_markdown(report: dict) -> str:
         lines.append(f"- 当前热点题材：**{sectors.get('top_theme', 'N/A')}**")
         lines.append("")
 
+        # 涨停统计
+        lu_stats = sectors.get("lu_stats", {})
+        if lu_stats.get("total", 0) > 0:
+            lines.append("### 涨停统计")
+            lines.append("")
+            lines.append(f"- 涨停家数：**{lu_stats['total']}**（首板 {lu_stats.get('first_board', 0)}，连板 {lu_stats.get('continuous', 0)}）")
+            if lu_stats.get("themes"):
+                lines.append("- 涨停板块：")
+                for t in lu_stats["themes"][:5]:
+                    lines.append(f"  - {t['name']}：{t['up_nums']}家涨停（{t['up_stat']}）")
+            lines.append("")
+
+        # 连板阶梯
+        limit_step = sectors.get("limit_step", [])
+        multi_board = [s for s in limit_step if s.get("nums", 0) >= 2]
+        if multi_board:
+            lines.append("### 连板阶梯")
+            lines.append("")
+            lines.append("| 股票 | 代码 | 连板天数 |")
+            lines.append("|------|------|----------|")
+            for s in multi_board[:10]:
+                lines.append(f"| {s['name']} | {s['ts_code']} | {s['nums']}连板 |")
+            lines.append("")
+
         # 题材排行
         themes = sectors.get("themes", [])
         if themes:
@@ -540,7 +763,7 @@ def render_markdown(report: dict) -> str:
                 lead = t.get("lead_stock", "N/A")
                 lead_pct = t.get("lead_stock_pct_change", 0)
                 z_t = int(t.get("z_t_num", 0))
-                lines.append(f"| {i} | {t['theme_name']} | {t['theme_hot']:.0f} | {t['pct_change']:+.2f}% | {lead} | {lead_pct:+.2f}% | {z_t} |")
+                lines.append(f"| {i} | {t['theme_name']} | {t['hot']:.0f} | {t['pct_change']:+.2f}% | {lead} | {lead_pct:+.2f}% | {z_t} |")
             lines.append("")
 
         # 概念板块行情
@@ -554,18 +777,6 @@ def render_markdown(report: dict) -> str:
                 amt_yi = s.get("amount", 0) / 1e8 if s.get("amount", 0) > 0 else 0
                 lines.append(f"| {s['ts_code']} | {s['pct_change']:+.2f}% | {s['swing']:.2f}% | {s['turnover_rate']:.2f}% | {amt_yi:.1f}亿 |")
             lines.append("")
-
-        # 涨停数据
-        kpl = sectors.get("kpl", {})
-        if kpl.get("status") == "available":
-            lines.append("### 涨停数据")
-            lines.append("")
-            lines.append(f"- 涨停家数：{kpl.get('total_lu', 0)}")
-            lines.append(f"- 首板：{kpl.get('first_board', 0)}")
-            if kpl.get("themes"):
-                lines.append("- 涨停题材：")
-                for t in kpl["themes"][:5]:
-                    lines.append(f"  - {t['name']}：{t['count']}家")
     else:
         lines.append(f"- 板块数据缺失：{sectors.get('reason', '未知')}")
     lines.append("")
@@ -575,11 +786,16 @@ def render_markdown(report: dict) -> str:
     lines.append("## 三、龙头个股")
     lines.append("")
     if leading:
-        lines.append("| 股票 | 代码 | 来源题材 | 角色 | 涨幅 |")
-        lines.append("|------|------|----------|------|------|")
+        lines.append("| 股票 | 代码 | 来源 | 角色 | 涨幅 | 备注 |")
+        lines.append("|------|------|------|------|------|------|")
         for s in leading:
             pct = s.get("pct_change", 0)
-            lines.append(f"| {s['name']} | {s['ts_code']} | {s['source_theme']} | {s['role']} | {pct:+.2f}% |")
+            note = ""
+            if s.get("fc_ratio"):
+                note = f"封单比{s['fc_ratio']:.0f}"
+            elif s.get("strth"):
+                note = f"强度{s['strth']:.0f}"
+            lines.append(f"| {s['name']} | {s['ts_code']} | {s['source_theme']} | {s['role']} | {pct:+.2f}% | {note} |")
     else:
         lines.append("- 未找到龙头个股数据")
     lines.append("")

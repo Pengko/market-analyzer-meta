@@ -1,19 +1,27 @@
 #!/usr/bin/env python3
 """
-大盘板块分析入口。
+大盘板块分析入口（DC 数据驱动）。
 
 用法：
     python market_macro_runner.py                    # 分析当前大盘
-    python market_macro_runner.py --date 2026-05-29  # 指定日期
+    python market_macro_runner.py --date 2026-05-28  # 指定日期
     python market_macro_runner.py --format json       # JSON 输出
+    python market_macro_runner.py --top 10            # 显示 TOP 10 板块
 
-输出：大盘环境→板块热点→龙头个股→消息催化→交易结论
+数据源：
+    - 腾讯 API：大盘指数实时行情
+    - dc_concept：题材热度排行
+    - dc_daily：概念板块日行情（OHLCV）
+    - dc_member：概念板块成分股
+    - dc_index：概念指数基本信息
+    - kpl_list：涨停数据（情绪指标）
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -25,18 +33,17 @@ META_ROOT = SCRIPT_DIR.parents[1]  # market-analyzer-meta/
 SDA_SCRIPTS = META_ROOT / "skills" / "stock-deep-analysis" / "scripts"
 sys.path.insert(0, str(SDA_SCRIPTS))
 
-from common import normalize_symbol, normalize_trade_date
-from data.config_loader import cfg
-from data.data_access import (
-    load_daily_rows_bulk,
-)
+from common import normalize_trade_date
 from time_util import scenario_from_now
 from runtime.runtime_fetch import resolve_now_china
-from analysis.market_analyzer import analyze_market_context
-from analysis.sector_analyzer import analyze_sector_context
+
+# DC 数据根目录
+THEME_DATA_ROOT = Path.home() / "quant-data" / "tushare" / "股票数据" / "theme_data"
 
 
-# ── Step 1: 大盘环境 ──────────────────────────────────
+# ═══════════════════════════════════════════════════════
+# Step 1: 大盘环境
+# ═══════════════════════════════════════════════════════
 
 def fetch_index_quotes() -> dict[str, dict]:
     """从腾讯 API 获取三大指数实时行情。"""
@@ -74,13 +81,12 @@ def fetch_index_quotes() -> dict[str, dict]:
     return result
 
 
-def analyze_market_environment(trade_date_text: str) -> dict[str, Any]:
+def analyze_market_environment() -> dict[str, Any]:
     """Step 1: 大盘环境分析。"""
     quotes = fetch_index_quotes()
     if "error" in quotes:
         return {"status": "error", "reason": quotes["error"]}
 
-    # 判断强弱
     pct_values = [q.get("pct_change", 0) for q in quotes.values() if q.get("pct_change") is not None]
     avg_pct = sum(pct_values) / len(pct_values) if pct_values else 0
 
@@ -93,7 +99,6 @@ def analyze_market_environment(trade_date_text: str) -> dict[str, Any]:
     else:
         strength = "偏弱"
 
-    # 判断共振
     if all(p > 0 for p in pct_values):
         resonance = "三大指数共振上涨"
     elif all(p < 0 for p in pct_values):
@@ -101,12 +106,7 @@ def analyze_market_environment(trade_date_text: str) -> dict[str, Any]:
     else:
         resonance = "指数分化"
 
-    # 量能判断（简化：用成交额绝对值判断）
     total_amount = sum(q.get("amount_yi", 0) for q in quotes.values())
-
-    summary_parts = [f"市场整体{strength}，{resonance}"]
-    if total_amount > 0:
-        summary_parts.append(f"两市成交额约{total_amount:.0f}亿")
 
     return {
         "status": "available",
@@ -115,159 +115,293 @@ def analyze_market_environment(trade_date_text: str) -> dict[str, Any]:
         "resonance": resonance,
         "avg_pct_change": round(avg_pct, 2),
         "total_amount_yi": round(total_amount, 2),
-        "summary": "，".join(summary_parts),
+        "summary": f"市场整体{strength}，{resonance}，两市成交额约{total_amount:.0f}亿",
     }
 
 
-# ── Step 2: 板块热点 ──────────────────────────────────
+# ═══════════════════════════════════════════════════════
+# Step 2: 板块热点分析（DC 数据驱动）
+# ═══════════════════════════════════════════════════════
 
-def analyze_sector_hotspots(trade_date_text: str) -> dict[str, Any]:
-    """Step 2: 板块热点分析。"""
-    trade_date_compact = trade_date_text.replace("-", "")
+def load_dc_concept(trade_date_compact: str) -> list[dict]:
+    """加载 DC 题材数据（dc_concept）。"""
+    import pyarrow.parquet as pq
 
-    # 尝试读取 KPL 概念数据
-    from data.data_access import _read_parquet_rows
-    kpl_root = cfg.paths("stock_data_root") / "theme_data" / "kpl_concept_cons" / "by_concept"
-    dc_root = cfg.paths("stock_data_root") / "theme_data" / "dc_concept"
-
-    hotspots = []
-
-    # 读取 DC 概念行情
-    dc_path = dc_root / f"dc_concept_{trade_date_compact[:4]}.parquet"
-    if dc_path.exists():
-        rows = _read_parquet_rows(dc_path)
-        day_rows = [r for r in rows if str(r.get("trade_date", "")).strip() == trade_date_compact]
-        day_rows.sort(key=lambda r: float(r.get("pct_change", 0) or 0), reverse=True)
-        for r in day_rows[:10]:
-            hotspots.append({
-                "name": r.get("name", ""),
-                "pct_change": float(r.get("pct_change", 0) or 0),
-                "source": "dc_concept",
-            })
-
-    # 如果 DC 没数据，用 KPL
-    if not hotspots and kpl_root.exists():
-        concept_files = sorted(kpl_root.glob("*.csv"), key=lambda f: f.stat().st_mtime, reverse=True)
-        for f in concept_files[:20]:
-            try:
-                import csv
-                with f.open("r", encoding="utf-8-sig") as fh:
-                    reader = csv.DictReader(fh)
-                    for row in reader:
-                        if str(row.get("trade_date", "")).strip() == trade_date_compact:
-                            hotspots.append({
-                                "name": row.get("con_name", f.stem),
-                                "hot_num": int(row.get("hot_num", 0) or 0),
-                                "source": "kpl",
-                            })
-            except Exception:
-                continue
-        hotspots.sort(key=lambda x: x.get("hot_num", 0), reverse=True)
-        hotspots = hotspots[:10]
-
-    if not hotspots:
-        return {"status": "missing", "reason": "无板块数据", "hotspots": []}
-
-    return {
-        "status": "available",
-        "hotspots": hotspots[:10],
-        "top_sector": hotspots[0]["name"] if hotspots else None,
-        "summary": f"当日热点：{hotspots[0]['name']}" if hotspots else "无热点数据",
-    }
-
-
-# ── Step 3: 龙头个股 ──────────────────────────────────
-
-def find_leading_stocks(hotspots: list[dict], trade_date_text: str) -> list[dict]:
-    """Step 3: 从热点板块中找龙头个股。"""
-    if not hotspots:
+    path = THEME_DATA_ROOT / "dc_concept" / "2026.parquet"
+    if not path.exists():
         return []
 
-    trade_date_compact = trade_date_text.replace("-", "")
-    leading = []
+    df = pq.read_table(path).to_pandas()
+    day_df = df[df["trade_date"] == trade_date_compact]
+    if day_df.empty:
+        # 尝试最近日期
+        latest = df["trade_date"].max()
+        day_df = df[df["trade_date"] == latest]
 
-    # 读取 DC 概念成分股
-    from data.data_access import _read_parquet_rows
-    cons_root = cfg.paths("stock_data_root") / "theme_data" / "dc_concept_cons"
+    records = []
+    for _, row in day_df.iterrows():
+        records.append({
+            "theme_code": str(row.get("theme_code", "")),
+            "theme_name": str(row.get("name", "")),
+            "theme_hot": float(row.get("hot", 0) or 0),
+            "theme_top": str(row.get("lead_stock", "")),
+            "theme_num": 0,
+            "pct_change": float(row.get("pct_change", 0) or 0),
+            "hot": float(row.get("hot", 0) or 0),
+            "strength": float(row.get("strength", 0) or 0),
+            "z_t_num": float(row.get("z_t_num", 0) or 0),
+            "lead_stock": str(row.get("lead_stock", "")),
+            "lead_stock_code": str(row.get("lead_stock_code", "")),
+            "lead_stock_pct_change": float(row.get("lead_stock_pct_change", 0) or 0),
+        })
 
-    for sector in hotspots[:3]:
-        sector_name = sector.get("name", "")
-        if not sector_name:
-            continue
+    return records
 
-        # 查找该板块的成分股
-        cons_files = list(cons_root.rglob(f"*{sector_name}*.parquet"))
-        if not cons_files:
-            continue
 
+def load_dc_daily(trade_date_compact: str) -> list[dict]:
+    """加载 DC 概念板块日行情（dc_daily）。"""
+    daily_root = THEME_DATA_ROOT / "dc_daily"
+    if not daily_root.exists():
+        return []
+
+    records = []
+    csv_files = list(daily_root.glob("*.csv"))
+
+    for f in csv_files[:500]:  # 限制文件数避免太慢
         try:
-            rows = _read_parquet_rows(cons_files[0])
-            # 取最新的成分股
-            day_rows = [r for r in rows if str(r.get("trade_date", "")).strip() <= trade_date_compact]
-            if not day_rows:
+            import pandas as pd
+            df = pd.read_csv(f)
+            day_df = df[df["trade_date"].astype(str) == trade_date_compact]
+            if day_df.empty:
                 continue
-
-            # 按涨幅排序取前3
-            for r in day_rows[:3]:
-                ts_code = r.get("ts_code", "")
-                name = r.get("name", "")
-                if ts_code and name:
-                    leading.append({
-                        "ts_code": ts_code,
-                        "name": name,
-                        "sector": sector_name,
-                        "role": "龙头" if len(leading) == 0 else "前排",
-                    })
+            row = day_df.iloc[-1]
+            records.append({
+                "ts_code": str(row.get("ts_code", "")),
+                "close": float(row.get("close", 0) or 0),
+                "pct_change": float(row.get("pct_change", 0) or 0),
+                "vol": float(row.get("vol", 0) or 0),
+                "amount": float(row.get("amount", 0) or 0),
+                "swing": float(row.get("swing", 0) or 0),
+                "turnover_rate": float(row.get("turnover_rate", 0) or 0),
+                "category": str(row.get("category", "")),
+            })
         except Exception:
             continue
 
-    return leading[:5]
+    return records
 
 
-# ── Step 4: 消息催化 ──────────────────────────────────
+def load_dc_member_concept(trade_date_compact: str, theme_code: str) -> list[dict]:
+    """加载 DC 概念成分股（dc_member）。"""
+    import pandas as pd
+
+    member_root = THEME_DATA_ROOT / "dc_member"
+    if not member_root.exists():
+        return []
+
+    # 尝试 parquet
+    parquet_path = member_root / "2026.parquet"
+    if parquet_path.exists():
+        import pyarrow.parquet as pq
+        df = pq.read_table(parquet_path).to_pandas()
+        filtered = df[df["ts_code"] == theme_code]
+        if not filtered.empty:
+            # 取最新日期
+            latest = filtered["trade_date"].max()
+            filtered = filtered[filtered["trade_date"] == latest]
+            return [
+                {"con_code": str(r["con_code"]), "name": str(r["name"])}
+                for _, r in filtered.iterrows()
+            ]
+
+    # 尝试 CSV
+    csv_path = member_root / f"{theme_code}.csv"
+    if csv_path.exists():
+        df = pd.read_csv(csv_path)
+        latest = df["trade_date"].max()
+        filtered = df[df["trade_date"] == latest]
+        return [
+            {"con_code": str(r["con_code"]), "name": str(r["name"])}
+            for _, r in filtered.iterrows()
+        ]
+
+    return []
+
+
+def analyze_sector_hotspots(trade_date_compact: str, top_n: int = 10) -> dict[str, Any]:
+    """Step 2: 板块热点分析（DC 题材 + 概念板块）。"""
+
+    # ── 题材层（dc_concept）──
+    concepts = load_dc_concept(trade_date_compact)
+    if not concepts:
+        return {"status": "missing", "reason": "无 DC 题材数据", "themes": [], "sectors": []}
+
+    # 按热度排序取 TOP N
+    concepts.sort(key=lambda x: x.get("hot", 0), reverse=True)
+    hot_themes = concepts[:top_n]
+
+    # ── 概念板块层（dc_daily）──
+    daily_records = load_dc_daily(trade_date_compact)
+    daily_records.sort(key=lambda x: x.get("pct_change", 0), reverse=True)
+    hot_sectors = daily_records[:top_n]
+
+    # ── 涨停数据（kpl_list）──
+    kpl_data = load_kpl_list(trade_date_compact)
+
+    # ── 板块轮动阶段判断 ──
+    # 简化：用题材热度集中度判断
+    total_hot = sum(t.get("theme_hot", 0) for t in concepts[:10])
+    top3_hot = sum(t.get("theme_hot", 0) for t in concepts[:3])
+    concentration = top3_hot / total_hot if total_hot > 0 else 0
+
+    if concentration > 0.5:
+        cycle = "加强"
+    elif concentration > 0.35:
+        cycle = "分化"
+    else:
+        cycle = "轮动"
+
+    return {
+        "status": "available",
+        "trade_date": trade_date_compact,
+        "themes": hot_themes,
+        "sectors": hot_sectors,
+        "kpl": kpl_data,
+        "cycle": cycle,
+        "concentration": round(concentration, 2),
+        "top_theme": hot_themes[0]["theme_name"] if hot_themes else None,
+        "top_sector": hot_sectors[0]["ts_code"] if hot_sectors else None,
+    }
+
+
+# ═══════════════════════════════════════════════════════
+# Step 3: 龙头个股
+# ═══════════════════════════════════════════════════════
+
+def find_leading_stocks(sector_result: dict, trade_date_compact: str, top_n: int = 5) -> list[dict]:
+    """Step 3: 从热点板块中找龙头个股。"""
+    leading = []
+    seen_codes = set()
+
+    # 从题材层取 lead_stock
+    for theme in sector_result.get("themes", [])[:5]:
+        code = theme.get("lead_stock_code", "")
+        name = theme.get("lead_stock", "")
+        if code and code not in seen_codes:
+            seen_codes.add(code)
+            leading.append({
+                "ts_code": code,
+                "name": name,
+                "source_theme": theme.get("theme_name", ""),
+                "role": "题材龙头",
+                "pct_change": theme.get("lead_stock_pct_change", 0),
+            })
+
+    # 从概念板块成分股中补充
+    for theme in sector_result.get("themes", [])[:3]:
+        theme_code = theme.get("theme_code", "")
+        if not theme_code:
+            continue
+        members = load_dc_member_concept(trade_date_compact, theme_code)
+        for m in members[:3]:
+            code = m.get("con_code", "")
+            if code and code not in seen_codes:
+                seen_codes.add(code)
+                leading.append({
+                    "ts_code": code,
+                    "name": m.get("name", ""),
+                    "source_theme": theme.get("theme_name", ""),
+                    "role": "板块前排",
+                    "pct_change": 0,
+                })
+
+    return leading[:top_n]
+
+
+# ═══════════════════════════════════════════════════════
+# 涨停数据（kpl_list）
+# ═══════════════════════════════════════════════════════
+
+def load_kpl_list(trade_date_compact: str) -> dict[str, Any]:
+    """加载涨停数据（kpl_list）。"""
+    import pandas as pd
+
+    kpl_root = THEME_DATA_ROOT / "kpl_list"
+    if not kpl_root.exists():
+        return {"status": "missing"}
+
+    year = trade_date_compact[:4]
+    csv_path = kpl_root / year / f"{trade_date_compact}.csv"
+    parquet_path = kpl_root / f"{year}.parquet"
+
+    df = None
+    if csv_path.exists():
+        df = pd.read_csv(csv_path)
+    elif parquet_path.exists():
+        import pyarrow.parquet as pq
+        df = pq.read_table(parquet_path).to_pandas()
+        df = df[df["trade_date"].astype(str) == trade_date_compact]
+
+    if df is None or df.empty:
+        return {"status": "missing", "reason": "无涨停数据"}
+
+    # 统计
+    total_lu = len(df)
+    first_board = len(df[df.get("status", "") == "首板"]) if "status" in df.columns else 0
+    themes = []
+    if "theme" in df.columns:
+        theme_counts = df["theme"].value_counts().head(5)
+        themes = [{"name": t, "count": int(c)} for t, c in theme_counts.items() if pd.notna(t)]
+
+    return {
+        "status": "available",
+        "total_lu": total_lu,
+        "first_board": first_board,
+        "themes": themes,
+    }
+
+
+# ═══════════════════════════════════════════════════════
+# Step 4: 消息催化
+# ═══════════════════════════════════════════════════════
 
 def analyze_news_catalysts(trade_date_text: str) -> dict[str, Any]:
-    """Step 4: 消息催化分析（简化版，读取本地 news_pipeline）。"""
-    import os
-
-    news_root = Path(os.path.expanduser("~/quant-data/tushare/消息面数据/raw/news_pipeline"))
+    """Step 4: 消息催化分析（本地 news_pipeline）。"""
+    news_root = Path.home() / "quant-data" / "tushare" / "消息面数据" / "raw" / "news_pipeline"
     td_parts = trade_date_text.split("-")
     if len(td_parts) != 3:
         return {"status": "missing", "reason": "日期格式错误"}
 
     news_dir = news_root / td_parts[0] / td_parts[1] / td_parts[2]
     if not news_dir.exists():
-        return {"status": "missing", "reason": f"本地新闻目录不存在: {news_dir}"}
+        return {"status": "missing", "reason": "本地新闻目录不存在"}
 
     news_files = list(news_dir.glob("*.json"))
     if not news_files:
         return {"status": "missing", "reason": "无新闻文件"}
 
-    # 读取新闻文件
-    all_news = []
-    for f in news_files[:10]:
+    all_items = []
+    for f in news_files:
         try:
             with f.open("r", encoding="utf-8") as fh:
                 data = json.load(fh)
                 if isinstance(data, list):
-                    all_news.extend(data)
+                    all_items.extend(data)
                 elif isinstance(data, dict):
-                    all_news.append(data)
+                    all_items.append(data)
         except Exception:
             continue
 
-    if not all_news:
-        return {"status": "missing", "reason": "新闻文件为空"}
-
     return {
-        "status": "available",
-        "count": len(all_news),
+        "status": "available" if all_items else "missing",
+        "count": len(all_items),
         "files": len(news_files),
-        "summary": f"本地新闻{len(news_files)}个文件，共{len(all_news)}条",
     }
 
 
-# ── Step 5: 交易结论 ──────────────────────────────────
+# ═══════════════════════════════════════════════════════
+# Step 5: 交易结论
+# ═══════════════════════════════════════════════════════
 
 def generate_conclusion(
     market: dict,
@@ -277,10 +411,11 @@ def generate_conclusion(
 ) -> dict[str, Any]:
     """Step 5: 生成交易结论。"""
     strength = market.get("strength", "中性")
-    top_sector = sectors.get("top_sector", "无")
-    leading_count = len(leading)
+    top_theme = sectors.get("top_theme", "无")
+    cycle = sectors.get("cycle", "未知")
+    kpl = sectors.get("kpl", {})
+    lu_count = kpl.get("total_lu", 0)
 
-    # 简单规则判断
     if strength in ("偏强", "中性偏强"):
         direction = "偏多"
         action = "可积极参与"
@@ -293,36 +428,42 @@ def generate_conclusion(
 
     summary_parts = [
         f"市场{strength}，{direction}",
-        f"热点板块：{top_sector}",
+        f"热点题材：{top_theme}（{cycle}阶段）",
     ]
-    if leading_count > 0:
+    if lu_count > 0:
+        summary_parts.append(f"涨停{lu_count}家")
+    if leading:
         names = [s["name"] for s in leading[:3]]
-        summary_parts.append(f"关注个股：{'、'.join(names)}")
+        summary_parts.append(f"关注：{'、'.join(names)}")
 
     return {
         "direction": direction,
         "action": action,
-        "top_sector": top_sector,
+        "top_theme": top_theme,
+        "cycle": cycle,
         "leading_stocks": leading[:5],
         "summary": "；".join(summary_parts),
     }
 
 
-# ── 主流程 ────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════
+# 主流程
+# ═══════════════════════════════════════════════════════
 
-def build_market_macro_report(trade_date_text: str) -> dict[str, Any]:
+def build_market_macro_report(trade_date_text: str, top_n: int = 10) -> dict[str, Any]:
     """大盘板块分析主流程。"""
     now, time_source = resolve_now_china()
     session = scenario_from_now(now)
+    trade_date_compact = trade_date_text.replace("-", "")
 
     # Step 1: 大盘环境
-    market = analyze_market_environment(trade_date_text)
+    market = analyze_market_environment()
 
     # Step 2: 板块热点
-    sectors = analyze_sector_hotspots(trade_date_text)
+    sectors = analyze_sector_hotspots(trade_date_compact, top_n)
 
     # Step 3: 龙头个股
-    leading = find_leading_stocks(sectors.get("hotspots", []), trade_date_text)
+    leading = find_leading_stocks(sectors, trade_date_compact)
 
     # Step 4: 消息催化
     news = analyze_news_catalysts(trade_date_text)
@@ -344,10 +485,14 @@ def build_market_macro_report(trade_date_text: str) -> dict[str, Any]:
     }
 
 
+# ═══════════════════════════════════════════════════════
+# 渲染
+# ═══════════════════════════════════════════════════════
+
 def render_markdown(report: dict) -> str:
     """渲染为 Markdown 报告。"""
     lines = [
-        f"# 大盘板块分析报告",
+        "# 大盘板块分析报告",
         "",
         f"> 分析时间：{report.get('analysis_time', 'N/A')}",
         f"> 数据日期：{report.get('trade_date', 'N/A')}",
@@ -362,6 +507,8 @@ def render_markdown(report: dict) -> str:
     lines.append("## 一、大盘环境")
     lines.append("")
     if market.get("status") == "available":
+        lines.append("| 指数 | 收盘 | 涨跌幅 | 成交额 |")
+        lines.append("|------|------|--------|--------|")
         for name, q in market.get("quotes", {}).items():
             pct = q.get("pct_change", 0)
             sign = "+" if pct >= 0 else ""
@@ -369,7 +516,6 @@ def render_markdown(report: dict) -> str:
         lines.append("")
         lines.append(f"- 市场整体：{market.get('strength', 'N/A')}")
         lines.append(f"- 共振状态：{market.get('resonance', 'N/A')}")
-        lines.append(f"- 两市成交额：{market.get('total_amount_yi', 'N/A')}亿")
     else:
         lines.append(f"- 获取失败：{market.get('reason', '未知错误')}")
     lines.append("")
@@ -379,13 +525,47 @@ def render_markdown(report: dict) -> str:
     lines.append("## 二、板块热点")
     lines.append("")
     if sectors.get("status") == "available":
-        lines.append("| 板块 | 涨幅/热度 | 来源 |")
-        lines.append("|------|-----------|------|")
-        for h in sectors.get("hotspots", [])[:5]:
-            if h.get("source") == "dc_concept":
-                lines.append(f"| {h['name']} | +{h.get('pct_change', 0):.2f}% | DC概念 |")
-            else:
-                lines.append(f"| {h['name']} | 热度{h.get('hot_num', 0)} | KPL |")
+        lines.append(f"- 轮动阶段：**{sectors.get('cycle', 'N/A')}**（热度集中度 {sectors.get('concentration', 0):.0%}）")
+        lines.append(f"- 当前热点题材：**{sectors.get('top_theme', 'N/A')}**")
+        lines.append("")
+
+        # 题材排行
+        themes = sectors.get("themes", [])
+        if themes:
+            lines.append("### 题材热度排行")
+            lines.append("")
+            lines.append("| 排名 | 题材 | 热度 | 涨幅 | 龙头 | 龙头涨幅 | 涨停数 |")
+            lines.append("|------|------|------|------|------|----------|--------|")
+            for i, t in enumerate(themes[:10], 1):
+                lead = t.get("lead_stock", "N/A")
+                lead_pct = t.get("lead_stock_pct_change", 0)
+                z_t = int(t.get("z_t_num", 0))
+                lines.append(f"| {i} | {t['theme_name']} | {t['theme_hot']:.0f} | {t['pct_change']:+.2f}% | {lead} | {lead_pct:+.2f}% | {z_t} |")
+            lines.append("")
+
+        # 概念板块行情
+        hot_sectors = sectors.get("sectors", [])
+        if hot_sectors:
+            lines.append("### 概念板块行情 TOP 10")
+            lines.append("")
+            lines.append("| 代码 | 涨跌幅 | 振幅 | 换手率 | 成交额 |")
+            lines.append("|------|--------|------|--------|--------|")
+            for s in hot_sectors[:10]:
+                amt_yi = s.get("amount", 0) / 1e8 if s.get("amount", 0) > 0 else 0
+                lines.append(f"| {s['ts_code']} | {s['pct_change']:+.2f}% | {s['swing']:.2f}% | {s['turnover_rate']:.2f}% | {amt_yi:.1f}亿 |")
+            lines.append("")
+
+        # 涨停数据
+        kpl = sectors.get("kpl", {})
+        if kpl.get("status") == "available":
+            lines.append("### 涨停数据")
+            lines.append("")
+            lines.append(f"- 涨停家数：{kpl.get('total_lu', 0)}")
+            lines.append(f"- 首板：{kpl.get('first_board', 0)}")
+            if kpl.get("themes"):
+                lines.append("- 涨停题材：")
+                for t in kpl["themes"][:5]:
+                    lines.append(f"  - {t['name']}：{t['count']}家")
     else:
         lines.append(f"- 板块数据缺失：{sectors.get('reason', '未知')}")
     lines.append("")
@@ -395,10 +575,11 @@ def render_markdown(report: dict) -> str:
     lines.append("## 三、龙头个股")
     lines.append("")
     if leading:
-        lines.append("| 股票 | 代码 | 板块 | 角色 |")
-        lines.append("|------|------|------|------|")
+        lines.append("| 股票 | 代码 | 来源题材 | 角色 | 涨幅 |")
+        lines.append("|------|------|----------|------|------|")
         for s in leading:
-            lines.append(f"| {s['name']} | {s['ts_code']} | {s['sector']} | {s['role']} |")
+            pct = s.get("pct_change", 0)
+            lines.append(f"| {s['name']} | {s['ts_code']} | {s['source_theme']} | {s['role']} | {pct:+.2f}% |")
     else:
         lines.append("- 未找到龙头个股数据")
     lines.append("")
@@ -408,7 +589,7 @@ def render_markdown(report: dict) -> str:
     lines.append("## 四、消息催化")
     lines.append("")
     if news.get("status") == "available":
-        lines.append(f"- {news.get('summary', 'N/A')}")
+        lines.append(f"- 本地新闻：{news.get('files', 0)}个文件，{news.get('count', 0)}条")
     else:
         lines.append(f"- 消息面缺失：{news.get('reason', '未知')}")
     lines.append("")
@@ -419,20 +600,21 @@ def render_markdown(report: dict) -> str:
     lines.append("")
     lines.append(f"- 方向判断：{conclusion.get('direction', 'N/A')}")
     lines.append(f"- 操作建议：{conclusion.get('action', 'N/A')}")
-    lines.append(f"- 热点板块：{conclusion.get('top_sector', 'N/A')}")
+    lines.append(f"- 热点题材：{conclusion.get('top_theme', 'N/A')}（{conclusion.get('cycle', 'N/A')}阶段）")
     if conclusion.get("leading_stocks"):
         lines.append("- 关注个股：")
         for s in conclusion["leading_stocks"][:3]:
-            lines.append(f"  - {s['name']}（{s['ts_code']}）— {s['sector']} {s['role']}")
+            lines.append(f"  - {s['name']}（{s['ts_code']}）— {s['source_theme']} {s['role']}")
     lines.append("")
 
     return "\n".join(lines)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="大盘板块分析")
+    parser = argparse.ArgumentParser(description="大盘板块分析（DC 数据驱动）")
     parser.add_argument("--date", default=None, help="分析日期 YYYY-MM-DD，默认当天")
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
+    parser.add_argument("--top", type=int, default=10, help="显示 TOP N 板块")
     args = parser.parse_args()
 
     if args.date:
@@ -441,7 +623,7 @@ def main() -> int:
         now, _ = resolve_now_china()
         trade_date_text = now.strftime("%Y-%m-%d")
 
-    report = build_market_macro_report(trade_date_text)
+    report = build_market_macro_report(trade_date_text, top_n=args.top)
 
     if args.format == "json":
         print(json.dumps(report, ensure_ascii=False, indent=2))

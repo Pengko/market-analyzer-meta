@@ -1,0 +1,20 @@
+# Tushare Pro API 依赖包
+# 优化版需要以下包支持本地缓存功能
+
+# 核心依赖
+tushare==1.4.24
+pandas>=2.0.0
+numpy>=1.24.0
+
+# 缓存存储格式支持（二选一即可，推荐pyarrow）
+pyarrow>=14.0.0        # 推荐：高性能Parquet格式
+# fastparquet>=2024.0.0  # 备选：Parquet格式
+
+# 可选依赖（用于数据分析和可视化）
+matplotlib>=3.7.0      # 数据可视化
+seaborn>=0.12.0        # 统计图表
+plotly>=5.18.0         # 交互式图表
+
+# 数据处理
+openpyxl>=3.1.0        # Excel文件支持
+xlrd>=2.0.0           # 旧版Excel支持（仅读取）

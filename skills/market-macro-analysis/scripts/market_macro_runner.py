@@ -34,6 +34,7 @@ SDA_SCRIPTS = META_ROOT / "skills" / "stock-deep-analysis" / "scripts"
 sys.path.insert(0, str(SDA_SCRIPTS))
 
 from common import normalize_trade_date
+from data.data_access import resolve_trade_date_by_calendar, latest_open_trade_date_on_or_before
 from time_util import scenario_from_now
 from runtime.runtime_fetch import resolve_now_china
 
@@ -45,47 +46,85 @@ THEME_DATA_ROOT = Path.home() / "quant-data" / "tushare" / "股票数据" / "the
 # Step 1: 大盘环境
 # ═══════════════════════════════════════════════════════
 
-def fetch_index_quotes() -> dict[str, dict]:
-    """从腾讯 API 获取三大指数实时行情。"""
+def fetch_index_quotes(trade_date_compact: str) -> dict[str, dict]:
+    """从腾讯 K-line API 获取指定日期的指数行情。"""
+    import urllib.request
+
+    codes = {"上证指数": "sh000001", "深证成指": "sz399001", "创业板指": "sz399006"}
+    result = {}
+
+    # 转换日期格式：20260526 → 2026-05-26
+    td = f"{trade_date_compact[:4]}-{trade_date_compact[4:6]}-{trade_date_compact[6:8]}"
+
+    for name, code in codes.items():
+        url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={code},day,{td},{td},1,qfq"
+        try:
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            kline = data.get("data", {}).get(code, {})
+            day_data = kline.get("day", []) or kline.get("qfqday", [])
+            if day_data:
+                row = day_data[0]  # [date, open, close, high, low, vol]
+                close = float(row[2]) if len(row) > 2 else None
+                result[name] = {
+                    "close": close,
+                    "pct_change": None,  # K-line 无法直接算涨跌幅
+                    "data_type": "kline",
+                }
+        except Exception:
+            continue
+
+    # 如果校准日期是最近交易日，用实时 API 补充涨跌幅和成交额
+    now, _ = resolve_now_china()
+    latest_open = latest_open_trade_date_on_or_before(now.strftime("%Y-%m-%d"))
+    if trade_date_compact == (latest_open or "").replace("-", ""):
+        realtime = _fetch_realtime_quotes()
+        for name in result:
+            if name in realtime:
+                rt = realtime[name]
+                result[name]["pct_change"] = rt.get("pct_change")
+                result[name]["amount_yi"] = rt.get("amount_yi")
+                result[name]["data_type"] = "realtime"
+
+    return result
+
+
+def _fetch_realtime_quotes() -> dict[str, dict]:
+    """腾讯实时行情（内部辅助）。"""
     import urllib.request
 
     codes = {"上证指数": "sh000001", "深证成指": "sz399001", "创业板指": "sz399006"}
     url = f"http://qt.gtimg.cn/q={','.join(codes.values())}"
+    result = {}
     try:
         req = urllib.request.Request(url)
         with urllib.request.urlopen(req, timeout=10) as resp:
             raw = resp.read().decode("gb2312", errors="replace")
-    except Exception as e:
-        return {"error": str(e)}
-
-    result = {}
-    for name, code in codes.items():
-        marker = f'v_{code}="'
-        start = raw.find(marker)
-        if start < 0:
-            continue
-        start += len(marker)
-        end = raw.find('"', start)
-        fields = raw[start:end].split("~")
-        if len(fields) < 38:
-            continue
-        try:
-            result[name] = {
-                "close": float(fields[3]) if fields[3] else None,
-                "pre_close": float(fields[4]) if fields[4] else None,
-                "pct_change": float(fields[32]) if fields[32] else None,
-                "amount_yi": round(float(fields[37]) / 10000, 2) if fields[37] else None,
-            }
-        except (ValueError, IndexError):
-            continue
+        for name, code in codes.items():
+            marker = f'v_{code}="'
+            start = raw.find(marker)
+            if start < 0:
+                continue
+            start += len(marker)
+            end = raw.find('"', start)
+            fields = raw[start:end].split("~")
+            if len(fields) >= 38:
+                result[name] = {
+                    "close": float(fields[3]) if fields[3] else None,
+                    "pct_change": float(fields[32]) if fields[32] else None,
+                    "amount_yi": round(float(fields[37]) / 10000, 2) if fields[37] else None,
+                }
+    except Exception:
+        pass
     return result
 
 
-def analyze_market_environment() -> dict[str, Any]:
+def analyze_market_environment(trade_date_compact: str) -> dict[str, Any]:
     """Step 1: 大盘环境分析。"""
-    quotes = fetch_index_quotes()
-    if "error" in quotes:
-        return {"status": "error", "reason": quotes["error"]}
+    quotes = fetch_index_quotes(trade_date_compact)
+    if not quotes:
+        return {"status": "error", "reason": "无法获取指数数据"}
 
     pct_values = [q.get("pct_change", 0) for q in quotes.values() if q.get("pct_change") is not None]
     avg_pct = sum(pct_values) / len(pct_values) if pct_values else 0
@@ -653,10 +692,13 @@ def build_market_macro_report(trade_date_text: str, top_n: int = 10) -> dict[str
     """大盘板块分析主流程。"""
     now, time_source = resolve_now_china()
     session = scenario_from_now(now)
-    trade_date_compact = trade_date_text.replace("-", "")
 
-    # Step 1: 大盘环境
-    market = analyze_market_environment()
+    # 交易日校准
+    resolved_date, cal_meta = resolve_trade_date_by_calendar(trade_date_text)
+    trade_date_compact = resolved_date.replace("-", "")
+
+    # Step 1: 大盘环境（传入交易日，区分实时/历史）
+    market = analyze_market_environment(trade_date_compact)
 
     # Step 2: 板块热点
     sectors = analyze_sector_hotspots(trade_date_compact, top_n)
@@ -672,7 +714,9 @@ def build_market_macro_report(trade_date_text: str, top_n: int = 10) -> dict[str
 
     return {
         "analysis_type": "market_macro",
-        "trade_date": trade_date_text,
+        "trade_date": resolved_date,
+        "requested_trade_date": trade_date_text,
+        "calendar_resolution": cal_meta,
         "analysis_time": now.isoformat(timespec="seconds"),
         "time_source": time_source,
         "session": session,
@@ -696,10 +740,20 @@ def render_markdown(report: dict) -> str:
         f"> 分析时间：{report.get('analysis_time', 'N/A')}",
         f"> 数据日期：{report.get('trade_date', 'N/A')}",
         f"> 当前时段：{report.get('session', 'N/A')}",
-        "",
-        "---",
-        "",
     ]
+    # 交易日校准说明
+    cal = report.get("calendar_resolution", {})
+    if cal.get("adjusted"):
+        lines.append(f"> 请求日期：{cal.get('requested_trade_date', 'N/A')}（已校准到最近交易日）")
+    # 指数数据类型
+    market = report.get("market_environment", {})
+    if market.get("quotes"):
+        data_type = list(market["quotes"].values())[0].get("data_type", "")
+        if data_type == "realtime":
+            lines.append(f"> 指数数据：实时行情")
+        elif data_type == "historical":
+            lines.append(f"> 指数数据：历史 K-line")
+    lines.extend(["", "---", ""])
 
     # Step 1: 大盘环境
     market = report.get("market_environment", {})
@@ -709,9 +763,13 @@ def render_markdown(report: dict) -> str:
         lines.append("| 指数 | 收盘 | 涨跌幅 | 成交额 |")
         lines.append("|------|------|--------|--------|")
         for name, q in market.get("quotes", {}).items():
-            pct = q.get("pct_change", 0)
-            sign = "+" if pct >= 0 else ""
-            lines.append(f"| {name} | {q.get('close', 'N/A')} | {sign}{pct:.2f}% | {q.get('amount_yi', 'N/A')}亿 |")
+            pct = q.get("pct_change")
+            close = q.get("close", "N/A")
+            if pct is not None:
+                sign = "+" if pct >= 0 else ""
+                lines.append(f"| {name} | {close} | {sign}{pct:.2f}% | {q.get('amount_yi', '-')}亿 |")
+            else:
+                lines.append(f"| {name} | {close} | - | - |")
         lines.append("")
         lines.append(f"- 市场整体：{market.get('strength', 'N/A')}")
         lines.append(f"- 共振状态：{market.get('resonance', 'N/A')}")

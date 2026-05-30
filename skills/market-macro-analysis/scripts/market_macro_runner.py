@@ -47,56 +47,52 @@ THEME_DATA_ROOT = Path.home() / "quant-data" / "tushare" / "股票数据" / "the
 # ═══════════════════════════════════════════════════════
 
 def fetch_index_quotes(trade_date_compact: str) -> dict[str, dict]:
-    """从腾讯 K-line API 获取指定日期的指数行情。"""
-    import urllib.request
+    """获取指数行情：优先本地，缺失时 fallback 到实时 API。"""
+    import pyarrow.parquet as pq
 
-    codes = {"上证指数": "sh000001", "深证成指": "sz399001", "创业板指": "sz399006"}
+    index_root = Path.home() / "quant-data" / "tushare" / "指数数据" / "index_daily"
+    codes = {"上证指数": "000001.SH", "深证成指": "399001.SZ", "创业板指": "399006.SZ"}
     result = {}
-
-    # 转换日期格式：20260526 → 2026-05-26
-    td = f"{trade_date_compact[:4]}-{trade_date_compact[4:6]}-{trade_date_compact[6:8]}"
+    missing = []
 
     for name, code in codes.items():
-        url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={code},day,{td},{td},1,qfq"
-        try:
-            req = urllib.request.Request(url)
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            kline = data.get("data", {}).get(code, {})
-            day_data = kline.get("day", []) or kline.get("qfqday", [])
-            if day_data:
-                row = day_data[0]  # [date, open, close, high, low, vol]
-                close = float(row[2]) if len(row) > 2 else None
-                result[name] = {
-                    "close": close,
-                    "pct_change": None,  # K-line 无法直接算涨跌幅
-                    "data_type": "kline",
-                }
-        except Exception:
+        path = index_root / f"{code}.parquet"
+        if not path.exists():
+            missing.append((name, code))
             continue
+        try:
+            df = pq.read_table(path).to_pandas()
+            row = df[df["trade_date"].astype(str) == trade_date_compact]
+            if row.empty:
+                missing.append((name, code))
+                continue
+            r = row.iloc[0]
+            result[name] = {
+                "close": float(r.get("close", 0) or 0),
+                "pct_change": float(r.get("pct_chg", 0) or 0),
+                "amount_yi": None,
+                "data_type": "local",
+            }
+        except Exception:
+            missing.append((name, code))
 
-    # 如果校准日期是最近交易日，用实时 API 补充涨跌幅和成交额
-    now, _ = resolve_now_china()
-    latest_open = latest_open_trade_date_on_or_before(now.strftime("%Y-%m-%d"))
-    if trade_date_compact == (latest_open or "").replace("-", ""):
-        realtime = _fetch_realtime_quotes()
-        for name in result:
-            if name in realtime:
-                rt = realtime[name]
-                result[name]["pct_change"] = rt.get("pct_change")
-                result[name]["amount_yi"] = rt.get("amount_yi")
-                result[name]["data_type"] = "realtime"
+    # 本地缺失的指数，用实时 API 补充
+    if missing:
+        _supplement_with_realtime(result, {name: code for name, code in missing})
 
     return result
 
 
-def _fetch_realtime_quotes() -> dict[str, dict]:
-    """腾讯实时行情（内部辅助）。"""
+def _supplement_with_realtime(result: dict, missing_names: dict = None) -> None:
+    """用腾讯实时 API 补充指数数据。"""
     import urllib.request
 
-    codes = {"上证指数": "sh000001", "深证成指": "sz399001", "创业板指": "sz399006"}
+    all_codes = {"上证指数": "sh000001", "深证成指": "sz399001", "创业板指": "sz399006"}
+    codes = {name: code for name, code in all_codes.items() if missing_names is None or name in missing_names}
+    if not codes:
+        return
+
     url = f"http://qt.gtimg.cn/q={','.join(codes.values())}"
-    result = {}
     try:
         req = urllib.request.Request(url)
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -114,10 +110,10 @@ def _fetch_realtime_quotes() -> dict[str, dict]:
                     "close": float(fields[3]) if fields[3] else None,
                     "pct_change": float(fields[32]) if fields[32] else None,
                     "amount_yi": round(float(fields[37]) / 10000, 2) if fields[37] else None,
+                    "data_type": "realtime",
                 }
     except Exception:
         pass
-    return result
 
 
 def analyze_market_environment(trade_date_compact: str) -> dict[str, Any]:
@@ -145,7 +141,7 @@ def analyze_market_environment(trade_date_compact: str) -> dict[str, Any]:
     else:
         resonance = "指数分化"
 
-    total_amount = sum(q.get("amount_yi", 0) for q in quotes.values())
+    total_amount = sum(q.get("amount_yi") or 0 for q in quotes.values())
 
     return {
         "status": "available",
@@ -765,11 +761,14 @@ def render_markdown(report: dict) -> str:
         for name, q in market.get("quotes", {}).items():
             pct = q.get("pct_change")
             close = q.get("close", "N/A")
+            amount = q.get("amount_yi")
             if pct is not None:
                 sign = "+" if pct >= 0 else ""
-                lines.append(f"| {name} | {close} | {sign}{pct:.2f}% | {q.get('amount_yi', '-')}亿 |")
+                pct_text = f"{sign}{pct:.2f}%"
             else:
-                lines.append(f"| {name} | {close} | - | - |")
+                pct_text = "-"
+            amount_text = f"{amount:.0f}亿" if amount else "-"
+            lines.append(f"| {name} | {close} | {pct_text} | {amount_text} |")
         lines.append("")
         lines.append(f"- 市场整体：{market.get('strength', 'N/A')}")
         lines.append(f"- 共振状态：{market.get('resonance', 'N/A')}")

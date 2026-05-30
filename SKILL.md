@@ -11,7 +11,7 @@ description: A股市场分析聚合层。根据用户意图自动识别分析方
 
 | 方向 | 入口 | 分析顺序 | 子 Skill |
 |------|------|----------|----------|
-| 个股分析 | 股票代码/名称 | 个股→板块→大盘→消息 | `stock-deep-analysis` |
+| 个股分析 | 股票代码/名称 | 个股→板块→大盘→消息 | `skills/stock-deep-analysis/` |
 | 大盘板块 | "大盘/板块怎么看" | 大盘→板块热点→个股→消息 | `skills/market-macro-analysis/` |
 | 消息面驱动 | 新闻/公告/热点关键词 | 消息→板块映射→个股→大盘 | `skills/news-driven-analysis/` |
 
@@ -26,7 +26,7 @@ description: A股市场分析聚合层。根据用户意图自动识别分析方
 - "分析XX"、"XX怎么样"、"XX适合买吗"
 - 提供了成本价/仓位信息
 
-路由：直接调用 `stock-deep-analysis` skill，不经过子 skill。
+路由：直接调用 `skills/stock-deep-analysis/` skill，不经过其他子 skill。
 
 ### 大盘板块分析（market-macro-analysis）
 触发条件：
@@ -71,7 +71,7 @@ description: A股市场分析聚合层。根据用户意图自动识别分析方
 
 ## 共享组件
 
-三个子 skill 共享以下底层模块（位于 `stock-deep-analysis/scripts/`）：
+三个子 skill 共享以下底层模块（位于 `skills/stock-deep-analysis/scripts/`）：
 
 | 组件 | 路径 | 用途 |
 |------|------|------|
@@ -103,6 +103,6 @@ description: A股市场分析聚合层。根据用户意图自动识别分析方
 
 | 文件 | 说明 |
 |------|------|
-| `stock-deep-analysis/SKILL.md` | 个股深度分析完整规范 |
+| `skills/stock-deep-analysis/SKILL.md` | 个股深度分析完整规范 |
 | `skills/market-macro-analysis/SKILL.md` | 大盘板块分析规范 |
 | `skills/news-driven-analysis/SKILL.md` | 消息面分析规范 |

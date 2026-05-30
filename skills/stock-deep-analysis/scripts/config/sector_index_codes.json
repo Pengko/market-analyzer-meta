@@ -1,0 +1,25 @@
+{
+  "indexes": {
+    "sh000001": "上证指数",
+    "sz399001": "深证成指",
+    "sz399006": "创业板指",
+    "sh000300": "沪深300",
+    "sz399610": "TMT50"
+  },
+  "sectors": {
+    "LED概念": "sz399248",
+    "AI硬件": "sz399248",
+    "储能概念": "sz399317",
+    "欧洲电力基建": "sz399317",
+    "国产芯片概念": "sz399248",
+    "智能驾驶系统": "sz399242",
+    "大金融": "sz399241",
+    "上海概念": "sz399241",
+    "新能源": "sz399620",
+    "中证A50成分股": "sh000300",
+    "汇金证金持股": "sh000300",
+    "破净整理": "sz399001"
+  },
+  "_comment": "Tencent minute API does NOT support concept BK codes (bkbkxxxx). Sector mappings are best-effort approximations to Shenzhen/Shanghai industry indices that DO have minute data. For concepts without a mapping, fall back to component-stock aggregation (Tier 3) or Hermes browser lookup (Tier 2).",
+  "_tencent_bk_codes_untested": null
+}

@@ -1,0 +1,75 @@
+{
+  "version": "1.0",
+  "last_updated": "2026-04-24T11:30:00+08:00",
+  "recent_scenarios": [
+    {
+      "scenario": "Simulation - 2026-04-23 post-market deep analysis",
+      "target_stock": "600103.SH",
+      "stock_name": "青山纸业",
+      "date": "2026-04-23",
+      "report_path": "references/pending-validations/2026-04-23/待验证-600103.SH-青山纸业-盘后分析.md",
+      "branch": "post_market",
+      "status": "pending_validation",
+      "analysis_points": [
+        "连续涨停后放量回调，KDJ高位死叉边缘",
+        "资金流向全面流出（大单+小单双杀）",
+        "龙虎榜显示非强力买入，游资交换",
+        "PE=210.62高估值，基本面支撑弱",
+        "分时数据缺失导致主力意图未知",
+        "消息面缺失无法判断实质利好/利空"
+      ]
+    }
+  ],
+  "test_cases": {
+    "600103.SH": [
+      {
+        "date": "2026-04-23",
+        "scenario": "post_market_simulation",
+        "report_path": "references/pending-validations/2026-04-23/待验证-600103.SH-青山纸业-盘后分析.md",
+        "status": "pending_validation",
+        "note": "模拟盘后分析，数据有缺失"
+      }
+    ]
+  },
+  "coverage_gap": {
+    "600103.SH": [
+      "post_market"
+    ]
+  },
+  "meta": {
+    "version": "1.0",
+    "created": "2026-04-25",
+    "description": "stock-deep-analysis 测试对象池"
+  },
+  "stocks": [
+    {
+      "code": "600103.SH",
+      "name": "青山纸业",
+      "added_date": "2026-04-25",
+      "status": "active",
+      "recent_scenarios": [
+        {
+          "date": "2026-04-24",
+          "type": "盘后分析",
+          "analysis_summary": "涨停板破板后连续两日大跌，短线头部明显，看空",
+          "key_points": [
+            "分时量能早盘放大量后逐步萎缩，主力出货意图明确",
+            "筹码套牢区重点在5.00-5.72元区间（约60%）",
+            "资金流向数据缺失，待补充",
+            "PE=198.74极度高估，基本面支撑弱",
+            "一季报4月30日披露，存业绩不及预期风险",
+            "盘后分析允许推演次日及后续3-5日"
+          ],
+          "rating": "看空",
+          "confidence": "高",
+          "data_gaps": [
+            "资金流向数据",
+            "单分时资金分布",
+            "公司最新财务数据"
+          ],
+          "report_path": "references/pending-validations/2026-04-24/待验证-600103.SH-青山纸业-盘后分析.md"
+        }
+      ]
+    }
+  ]
+}

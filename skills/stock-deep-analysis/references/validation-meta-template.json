@@ -1,0 +1,79 @@
+{
+  "meta_version": "1.0",
+  "stock": {
+    "code": "XXXXXX.XX",
+    "name": "股票名称"
+  },
+  "analysis_time": "YYYY-MM-DDTHH:MM:SS+08:00",
+  "analysis_type": "盘后复盘|盘中推演|午间推演|盘前分析",
+  "session": "pre_market|morning|noon休盘|afternoon|post_market",
+  
+  "predictions": [
+    {
+      "field": "next_day_bias",
+      "value": "偏强|中性|偏弱",
+      "confidence": 0.0,
+      "evidence": ["证据1", "证据2"]
+    },
+    {
+      "field": "action_conclusion",
+      "value": "买入|持有|卖出|观望",
+      "confidence": 0.0
+    }
+  ],
+  
+  "key_levels": {
+    "current_price": 0.0,
+    "support": 0.0,
+    "resistance": 0.0,
+    "stop_loss": 0.0
+  },
+  
+  "context_propagation": {
+    "market_bias": "偏强|中性|偏弱",
+    "sector_status": "available|fallback|missing",
+    "sector_role": "龙头|中军|跟风|补涨",
+    "news_impact": "新催化|旧消息|无消息",
+    "overall_bias_score": 0,
+    "action_bias": "supportive|neutral|conservative|defensive"
+  },
+  
+  "validation_fields": [
+    {
+      "field": "next_day_opening",
+      "description": "次日开盘情况",
+      "expected": "高开|平开|低开",
+      "status": "pending|verified|failed",
+      "actual": null,
+      "verified_at": null
+    },
+    {
+      "field": "sector_continuity",
+      "description": "板块延续性",
+      "expected": "延续|分化|退潮",
+      "status": "pending|verified|failed",
+      "actual": null,
+      "verified_at": null
+    },
+    {
+      "field": "price_target",
+      "description": "目标价位达成",
+      "expected": 0.0,
+      "status": "pending|verified|failed",
+      "actual": null,
+      "verified_at": null
+    }
+  ],
+  
+  "data_freshness": {
+    "quote": "YYYY-MM-DDTHH:MM:SS",
+    "minute_kline": "YYYY-MM-DD",
+    "daily_kline": "YYYY-MM-DD",
+    "capital_flow": "YYYY-MM-DD",
+    "chips": "YYYY-MM-DD",
+    "chips_delay_days": 0
+  },
+  
+  "risk_flags": ["风险标志1", "风险标志2"],
+  "support_flags": ["支持标志1", "支持标志2"]
+}

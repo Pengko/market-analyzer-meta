@@ -1,0 +1,29 @@
+{
+  "version": "2026-05-29",
+  "description": "基于策略因子优化结果生成的预测模型参数",
+  "thresholds": {
+    "strong_continuation": 7.0,
+    "bullish": 2.0,
+    "neutral_upper": -2.0,
+    "neutral_lower": 2.0,
+    "bearish": -7.0
+  },
+  "confidence_levels": {
+    "high": 0.7,
+    "medium": 0.5,
+    "low": 0.3
+  },
+  "pattern_weights": {
+    "分歧": {
+      "weight": 1.2,
+      "hit_rate": 100.0,
+      "samples": 1
+    },
+    "偏弱": {
+      "weight": 0.8,
+      "hit_rate": 0.0,
+      "samples": 1
+    }
+  },
+  "adjustment_rules": []
+}

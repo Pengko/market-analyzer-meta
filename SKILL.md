@@ -71,19 +71,21 @@ description: A股市场分析聚合层。根据用户意图自动识别分析方
 
 ## 共享组件
 
-三个子 skill 共享以下底层模块（位于 `skills/stock-deep-analysis/scripts/`）：
+三个子 skill 共享以下底层模块：
 
 | 组件 | 路径 | 用途 |
 |------|------|------|
-| 并行 Agent | `parallel/agents.py` | 8 个并行分析 Agent |
-| 决策引擎 | `decision/decision_engine.py` | 上下文传导+最终决策 |
-| 渲染层 | `render/report_renderer.py` | 报告格式化 |
-| 数据层 | `data/` | 本地 parquet 读取 |
-| 获取层 | `fetchers/` | API/浏览器数据获取 |
-| 信号层 | `signals/` | 技术信号+竞价+分时 |
-| 工具层 | `time_util.py` 等 | 时间/融资/资金 |
+| 并行 Agent | `skills/stock-deep-analysis/scripts/parallel/agents.py` | 8 个并行分析 Agent |
+| 决策引擎 | `skills/stock-deep-analysis/scripts/decision/decision_engine.py` | 上下文传导+最终决策 |
+| 渲染层 | `skills/stock-deep-analysis/scripts/render/report_renderer.py` | 报告格式化 |
+| 数据层 | `skills/stock-deep-analysis/scripts/data/` | 本地 parquet 读取 |
+| 获取层 | `skills/stock-deep-analysis/scripts/fetchers/` | API/浏览器数据获取 |
+| 信号层 | `skills/stock-deep-analysis/scripts/signals/` | 技术信号+竞价+分时 |
+| 工具层 | `skills/stock-deep-analysis/scripts/time_util.py` 等 | 时间/融资/资金 |
+| 数据同步 | `skills/tushare-pro/` | Tushare 数据下载/同步/补全 |
 
-子 skill 不重复实现这些模块，通过 `sys.path` 引用 `stock-deep-analysis/scripts/`。
+子 skill 不重复实现这些模块，通过 `sys.path` 引用 `skills/stock-deep-analysis/scripts/`。
+数据同步能力通过 `skills/tushare-pro/` 提供，包括日线、周线、月线、指数、概念等数据的自动补全。
 
 ## 输出格式
 
@@ -106,3 +108,4 @@ description: A股市场分析聚合层。根据用户意图自动识别分析方
 | `skills/stock-deep-analysis/SKILL.md` | 个股深度分析完整规范 |
 | `skills/market-macro-analysis/SKILL.md` | 大盘板块分析规范 |
 | `skills/news-driven-analysis/SKILL.md` | 消息面分析规范 |
+| `skills/tushare-pro/SKILL.md` | 数据同步规范（日线/周线/月线/指数/概念） |

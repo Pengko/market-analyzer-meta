@@ -52,19 +52,31 @@ description: A股市场分析聚合层。根据用户意图自动识别分析方
 2. 再执行个股分析（微观判断）
 3. 最后综合两个结果给出建议
 
-## 执行流程
+## 执行脚本
+
+每个子 skill 都有对应的 Python 入口脚本：
+
+| 子 Skill | 执行脚本 | 用法 |
+|----------|----------|------|
+| 个股分析 | `skills/stock-deep-analysis/scripts/build_stock_report.py` | `python build_stock_report.py --symbol 000725 --trade-date 2026-05-29` |
+| 大盘板块 | `skills/market-macro-analysis/scripts/market_macro_runner.py` | `python market_macro_runner.py --date 2026-05-29` |
+| 消息面 | `skills/news-driven-analysis/scripts/news_driven_runner.py` | `python news_driven_runner.py --date 2026-05-29 --keyword "面板"` |
+
+所有脚本共享 `skills/stock-deep-analysis/scripts/` 的模块，通过 `PYTHONPATH` 引用。
+
+## 路由流程
 
 ```
 用户输入
   ↓
-意图识别（本 skill）
+intent_classifier.py（意图识别）
   ↓
-┌─────────────┬─────────────┬─────────────┐
-│ 个股方向     │ 大盘板块方向 │ 消息面方向   │
-│             │             │             │
-│ stock-deep  │ market-macro│ news-driven │
-│ analysis    │ analysis    │ analysis    │
-└─────────────┴─────────────┴─────────────┘
+┌─────────────────┬─────────────────┬─────────────────┐
+│ direction=stock │ direction=market│ direction=news  │
+│                 │                 │                 │
+│ build_stock_    │ market_macro_   │ news_driven_    │
+│ report.py       │ runner.py       │ runner.py       │
+└─────────────────┴─────────────────┴─────────────────┘
   ↓
 输出统一格式报告
 ```

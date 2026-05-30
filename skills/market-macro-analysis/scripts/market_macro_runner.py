@@ -47,9 +47,24 @@ THEME_DATA_ROOT = Path.home() / "quant-data" / "tushare" / "股票数据" / "the
 # ═══════════════════════════════════════════════════════
 
 def fetch_index_quotes(trade_date_compact: str) -> dict[str, dict]:
-    """获取指数行情：优先本地 parquet，缺失时用 Tushare API 补全。"""
+    """获取指数行情：
+    - 盘中/最近交易日：用 Tushare rt_idx_k（实时日线）
+    - 历史日期：用本地 parquet，缺失时用 Tushare index_daily 补全
+    """
     import pyarrow.parquet as pq
 
+    # 判断是否为最近交易日（盘中可用实时数据）
+    now, _ = resolve_now_china()
+    latest_open = latest_open_trade_date_on_or_before(now.strftime("%Y-%m-%d"))
+    is_latest = trade_date_compact == (latest_open or "").replace("-", "")
+    session = scenario_from_now(now)
+    is_intraday = session in ("上午盘中", "下午盘中", "午间休盘")
+
+    if is_latest and is_intraday:
+        # 盘中：用 rt_idx_k 实时日线
+        return _fetch_realtime_idx()
+
+    # 非盘中或历史日期：本地 parquet 优先
     index_root = Path.home() / "quant-data" / "tushare" / "指数数据" / "index_daily"
     codes = {"上证指数": "000001.SH", "深证成指": "399001.SZ", "创业板指": "399006.SZ"}
     result = {}
@@ -70,16 +85,50 @@ def fetch_index_quotes(trade_date_compact: str) -> dict[str, dict]:
             result[name] = {
                 "close": float(r.get("close", 0) or 0),
                 "pct_change": float(r.get("pct_chg", 0) or 0),
-                "amount_yi": round(float(r.get("amount", 0) or 0) / 1e4, 2),
+                "amount_yi": round(float(r.get("amount", 0) or 0) / 1e5, 2),
                 "data_type": "local",
             }
         except Exception:
             missing.append((name, code))
 
-    # 本地缺失时用 Tushare API 补全
+    # 本地缺失时用 Tushare index_daily API 补全
     if missing:
         _supplement_with_tushare(result, trade_date_compact, {name: code for name, code in missing})
 
+    return result
+
+
+def _fetch_realtime_idx() -> dict[str, dict]:
+    """用 Tushare rt_idx_k 获取实时指数行情。"""
+    try:
+        import sys
+        tushare_dir = str(META_ROOT / "skills" / "tushare-pro")
+        if tushare_dir not in sys.path:
+            sys.path.insert(0, tushare_dir)
+        from utils.tushare_client import create_pro_api
+        pro = create_pro_api(timeout=15)
+        df = pro.rt_idx_k(ts_code="000001.SH,399001.SZ,399006.SZ")
+    except Exception:
+        return {}
+
+    if df.empty:
+        return {}
+
+    name_map = {"000001.SH": "上证指数", "399001.SZ": "深证成指", "399006.SZ": "创业板指"}
+    result = {}
+    for _, r in df.iterrows():
+        ts_code = str(r.get("ts_code", ""))
+        name = name_map.get(ts_code, ts_code)
+        close = float(r.get("close", 0) or 0)
+        pre_close = float(r.get("pre_close", 0) or 0)
+        pct_change = round((close - pre_close) / pre_close * 100, 2) if pre_close else None
+        amount = float(r.get("amount", 0) or 0)
+        result[name] = {
+            "close": close,
+            "pct_change": pct_change,
+            "amount_yi": round(amount / 1e8, 2),
+            "data_type": "realtime",
+        }
     return result
 
 

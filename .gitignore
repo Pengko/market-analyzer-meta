@@ -1,0 +1,27 @@
+__pycache__/
+*.pyc
+.DS_Store
+.env
+.venv/
+venv/
+
+# Local runtime state
+*.log
+*.lock
+.stk_mins_calls.json
+.cyq_chips_batch_state.json
+
+# Local data and caches
+logs/
+stock_data/
+custom_cache/
+test_direct_cache/
+tushare_cache/
+
+# Local overrides
+utils/local_config.py
+utils/config.py.proxy
+
+# Historical local-only materials
+archives/
+deprecated/

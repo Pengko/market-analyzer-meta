@@ -1,0 +1,118 @@
+positions:
+  600103.SH:
+    symbol: 600103.SH
+    name: 青山纸业
+    avg_cost: 3.925
+    hold: 2100
+    currency: CNY
+    last_updated: '2026-04-21'
+    notes: 主力持仓股
+    trades:
+    - date: '2026-04-07'
+      action: buy
+      price: 3.925
+      quantity: 1500
+      fee: 0.0
+    - date: '2026-04-10'
+      action: buy
+      price: 4.36
+      quantity: 600
+      fee: 0.0
+    - date: '2026-04-14'
+      action: sell
+      price: 4.73
+      quantity: 600
+      fee: 0.0
+  002347.SZ:
+    symbol: 002347.SZ
+    name: 泰尔股份
+    avg_cost: 8.407
+    hold: 300
+    currency: CNY
+    last_updated: '2026-04-21'
+    notes: ''
+    trades: []
+  600703.SH:
+    symbol: 600703.SH
+    name: 三安光电
+    avg_cost: 13.91
+    hold: 100
+    currency: CNY
+    last_updated: '2026-04-21'
+    notes: ''
+    trades: []
+  002015.SZ:
+    symbol: 002015.SZ
+    name: 协鑫能科
+    avg_cost: 19.15
+    hold: 100
+    currency: CNY
+    last_updated: '2026-04-21'
+    notes: ''
+    trades: []
+  603305.SH:
+    symbol: 603305.SH
+    name: 旭升集团
+    avg_cost: 16.62
+    hold: 1000
+    currency: CNY
+    last_updated: '2026-05-25'
+    notes: 用户提供成本价，持仓量待确认
+    trades:
+    - date: '2026-05-25'
+      action: buy
+      price: 16.62
+      quantity: 1000
+      fee: 0.0
+  000555.SZ:
+    symbol: 000555.SZ
+    name: 神州信息
+    avg_cost: 14.1
+    hold: 1000
+    currency: CNY
+    last_updated: '2026-05-25'
+    notes: 用户提供成本价，持仓量待确认
+    trades:
+    - date: '2026-05-25'
+      action: buy
+      price: 14.1
+      quantity: 1000
+      fee: 0.0
+  300708.SZ:
+    symbol: 300708.SZ
+    name: 聚灿光电
+    avg_cost: 9.3
+    hold: 1000
+    currency: CNY
+    last_updated: '2026-05-25'
+    notes: 用户提供成本价，持仓量待确认
+    trades:
+    - date: '2026-05-25'
+      action: buy
+      price: 9.3
+      quantity: 1000
+      fee: 0.0
+  000725.SZ:
+    symbol: 000725.SZ
+    name: 京东方A
+    avg_cost: 4.899
+    hold: 3000
+    currency: CNY
+    last_updated: '2026-05-29'
+    notes: 玻璃基板概念，短线暴炒后板块退潮，今日跌停
+    trades:
+    - date: '2026-05-19'
+      action: buy
+      price: 3.979
+      quantity: 900
+      fee: 0.0
+    - date: '2026-05-29'
+      action: buy
+      price: 5.44
+      quantity: 1000
+      fee: 0.0
+    - date: '2026-05-29'
+      action: buy
+      price: 5.16
+      quantity: 1100
+      fee: 0.0

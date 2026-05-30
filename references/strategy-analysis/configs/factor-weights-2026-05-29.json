@@ -1,0 +1,50 @@
+{
+  "version": "2026-05-29",
+  "description": "基于策略因子优化结果生成的技术因子权重",
+  "factors": {
+    "trend": {
+      "weight": 0.25,
+      "description": "趋势类指标权重",
+      "subfactors": [
+        "ma_bfq_5",
+        "ma_bfq_10",
+        "ma_bfq_20",
+        "ma_bfq_30"
+      ]
+    },
+    "momentum": {
+      "weight": 0.2,
+      "description": "动量类指标权重",
+      "subfactors": [
+        "rsi_bfq_6",
+        "rsi_bfq_12",
+        "volume_ratio"
+      ]
+    },
+    "volatility": {
+      "weight": 0.15,
+      "description": "波动率类指标权重",
+      "subfactors": [
+        "volatility_20d",
+        "atr_14"
+      ]
+    },
+    "volume": {
+      "weight": 0.25,
+      "description": "成交量类指标权重",
+      "subfactors": [
+        "volume_ratio",
+        "turnover_rate"
+      ]
+    },
+    "pattern": {
+      "weight": 0.15,
+      "description": "形态类指标权重",
+      "subfactors": [
+        "divergence_signal",
+        "support_resistance"
+      ]
+    }
+  },
+  "adjustments": []
+}

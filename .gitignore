@@ -1,0 +1,10 @@
+.DS_Store
+__pycache__/
+*.pyc
+references/pending-validations/
+*.bak
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+_tmp/

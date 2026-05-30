@@ -1,0 +1,333 @@
+# stock-deep-analysis 全局配置中心
+# 版本: 1.0
+# 说明: 此文件存放所有原先硬编码在代码中的参数。
+#       修改配置无需改动代码，保存后下次运行自动生效。
+#       支持 ~ 展开为用户主目录。
+
+# -----------------------------------------------------------------------------
+# 1. 数据路径
+# -----------------------------------------------------------------------------
+paths:
+  # 根目录: Tushare 数据下载位置
+  stock_data_root: "~/quant-data/tushare/股票数据"
+  # 新闻/消息面数据根目录
+  news_data_root: "~/quant-data/tushare/消息面数据"
+  # 指数数据根目录
+  index_data_root: "~/quant-data/tushare/指数数据"
+  # 财务数据根目录
+  financial_data_root: "~/quant-data/tushare/财务数据"
+
+  # 报告输出目录
+  report_output: "~/agent-skills/custom/stock-deep-analysis/references/pending-validations"
+  references_dir: "~/agent-skills/custom/stock-deep-analysis/references"
+  validations_dir: "~/agent-skills/custom/stock-deep-analysis/references/validations"
+
+  # 个人持仓配置
+  portfolio: "~/agent-skills/custom/stock-deep-analysis/references/portfolio/portfolio.yaml"
+  # SQLite 数仓文件（统一配置真值）
+  sqlite_db: "~/agent-skills/custom/stock-deep-analysis/references/data/stock_analytics.db"
+
+  # 测试对象池
+  test_pool: "~/agent-skills/custom/stock-deep-analysis/references/test-pools/测试对象池.md"
+
+  # 交易日历文件（按优先级排序，存在则用）
+  trade_cal:
+    - "~/quant-data/tushare/股票数据/trade_cal/trade_days.csv"
+    - "~/quant-data/tushare/股票数据/trade_cal/trade_cal_all.csv"
+
+  # 子目录结构（相对于 stock_data_root）
+  subdirs:
+    daily: "daily"
+    daily_basic: "daily_basic"
+    stk_factor: "stk_factor_pro"
+    # canonical 资金流目录（推荐新代码使用）
+    moneyflow_data: "moneyflow_data"
+    moneyflow_individual: "moneyflow_data/individual"
+    moneyflow_individual_tushare: "moneyflow_data/individual/tushare"
+    moneyflow_individual_dc: "moneyflow_data/individual/dc"
+    moneyflow_individual_ths: "moneyflow_data/individual/ths"
+    weekly: "weekly"
+    monthly: "monthly"
+    minute: "分钟数据"
+    hm_list: "hm_list"
+    trade_cal_dir: "trade_cal"
+    margin_eligibility: "margin_eligibility_browser"
+    financial_income: "income"
+    financial_balancesheet: "balancesheet"
+    financial_cashflow: "cashflow"
+    financial_disclosure_date: "disclosure_date"
+    financial_express: "express"
+    financial_fina_audit: "fina_audit"
+    financial_fina_indicator: "fina_indicator"
+    financial_fina_mainbz: "fina_mainbz"
+    financial_forecast: "forecast"
+
+  # 外部脚本/依赖路径
+  external:
+    news_browser: "~/.openclaw/skills/custom/market-news-intelligence/scripts/fetch_browser_news.py"
+    news_pipeline: "~/.openclaw/skills/custom/market-news-intelligence/scripts/run_news_pipeline.py"
+    news_prepare: "~/.openclaw/skills/custom/market-news-intelligence/scripts/prepare_news_context.py"
+    news_context: "~/.openclaw/skills/custom/market-news-intelligence/scripts/news_context.py"
+    news_init: "~/.openclaw/skills/custom/market-news-intelligence/scripts/init_news_capture.py"
+    hermes_executor: "~/agent-skills/custom/hermes-executor"
+    hermes_docker: "~/hermes-docker"
+    stock_skill_scripts: "~/agent-skills/custom/stock-deep-analysis/scripts"
+    tushare_pro: "~/.openclaw/skills/custom/tushare_pro"
+    fetch_tushare_auction: "~/.openclaw/skills/custom/stock-deep-analysis/scripts/fetch_tushare_auction.py"
+    fetch_eastmoney_auction: "~/.openclaw/skills/custom/stock-deep-analysis/scripts/fetch_eastmoney_auction.py"
+
+  # 临时目录
+  temp_dir: "/tmp"
+
+
+# 2. 技术指标参数
+# -----------------------------------------------------------------------------
+indicators:
+  # RSI 相对强弱指标
+  rsi:
+    periods: [6, 12, 24]
+    overbought: 80   # 超买阈值
+    oversold: 20     # 超卖阈值
+
+  # 移动平均线
+  moving_average:
+    short: 5
+    medium: 10
+    long: 20
+    very_long: 60
+
+  # KDJ 随机指标
+  kdj:
+    n: 9
+    m1: 3
+    m2: 3
+
+  # 量能
+  volume:
+    fast_window: 5
+    slow_window: 10
+
+  # ATR 波动率
+  atr:
+    period: 14
+
+  # ADX 趋势强度
+  adx:
+    period: 14
+
+  # 支撑/压力
+  support_pressure:
+    lookback: 20
+
+# -----------------------------------------------------------------------------
+# 3. 决策引擎参数
+# -----------------------------------------------------------------------------
+decision:
+  # 大盘情绪评分
+  market_sentiment:
+    breadth_score:
+      strong_bullish: 3      # 指数共振偏强
+      mild_bullish: 1       # 指数多数偏强
+      mild_bearish: -1      # 指数多数偏弱
+      strong_bearish: -3    # 指数共振偏弱
+    style_diff:
+      small_cap_threshold: 0.7   # 小盘成长占优阈值
+      large_cap_threshold: -0.7  # 大盘价值占优阈值
+
+  # T+2 推演评分
+  t2_forecast:
+    score_thresholds:
+      very_bullish: 5       # T+2 偏强延续
+      bullish: 2            # T+2 震荡偏强
+      neutral: 0            # T+2 分歧轮动
+      bearish: -2           # T+2 偏弱承压
+    trend_score:
+      bullish: 2
+      bearish: -2
+    vol_score:
+      bearish: 0            # <0 偏高
+      bullish: 0            # >0 可控
+
+  # 筹码结构评分
+  chip_structure:
+    winner_rate:
+      high: 0.70            # >=0.70 获利盘高
+      low: 0.30             # <=0.30 获利盘低
+    concentration:
+      high: 0.45            # >=0.45 筹码集中
+      low: 0.20             # <=0.20 筹码分散
+    price_band:
+      lower: 0.95           # close * 0.95
+      upper: 1.05           # close * 1.05
+
+  # 波动率评分
+  volatility:
+    atr_period: 14
+    sample_days: 120
+    min_samples: 20
+    rank:
+      high: 0.80            # >=0.80 高波动
+      low: 0.20             # <=0.20 低波动
+
+  # 数据完整性评分
+  data_quality:
+    base_score: 100
+    missing_penalty: 8
+    stale_penalty: 5
+    intraday_unavailable: 15
+    next_day_unavailable: 15
+    peer_linkage_unavailable: 12
+    auction_unavailable: 5
+    news_unavailable: 10
+    trend_unavailable: 6
+    chip_unavailable: 6
+    volatility_unavailable: 4
+    min_score: 20
+    max_score: 98
+
+  # 信号评分
+  signal:
+    intraday:
+      strong_threshold: 2
+      weak_threshold: 0
+    next_day:
+      strong_bullish: 2
+      mild_bullish: 1
+      bearish: 0
+    overall_bias:
+      very_bullish: 3
+      very_bearish: -3
+      mild_bearish: -1
+    auction:
+      positive_labels: ["偏主动抢筹", "偏积极试盘"]
+      negative_labels: ["偏兑现离场", "偏谨慎观望"]
+      strong_threshold: 2
+      weak_threshold: -2
+    trend_structure:
+      bullish_threshold: 2
+      bearish_threshold: -2
+    chip_structure:
+      bullish_threshold: 2
+      bearish_threshold: -2
+
+  # 板块龙头股评分权重
+  peer_scoring:
+    leader:
+      pct_weight: 0.55
+      amount_weight: 0.35
+      amp_weight: 0.10
+    anchor:
+      amount_weight: 0.70
+      stability_weight: 0.30
+    elastic:
+      amp_weight: 0.60
+      abs_pct_weight: 0.40
+    min_peers: 3
+    max_peers: 60
+
+# -----------------------------------------------------------------------------
+# 4. 浏览器/网络参数
+# -----------------------------------------------------------------------------
+network:
+  browser:
+    timeout_ms: 30000
+    wait_ms: 3500
+  tencent_api:
+    timeout: 10
+
+  # 通用网络超时（秒）
+  timeout_seconds: 10
+
+  # 子进程超时（秒）
+  subprocess_timeout:
+    short: 20
+    medium: 40
+    long: 120
+
+
+# -----------------------------------------------------------------------------
+# 5. 报告参数
+# -----------------------------------------------------------------------------
+report:
+  # 默认输出目录（可用 --output 覆盖）
+  default_output_dir: "~/agent-skills/custom/stock-deep-analysis/references/pending-validations"
+
+  # 数值格式化
+  formats:
+    markdown:
+      digits: 2
+    number_format:
+      digits: 6
+
+  # 分析深度
+  analysis_depth:
+    recent_days: 10        # 最近 N 日走势
+    moneyflow_days: 5      # 资金流向近 N 日
+    trend_lookback: 30     # 大盘/板块进入回顾 N 日
+
+# -----------------------------------------------------------------------------
+# 6. 新闻/消息面参数
+# -----------------------------------------------------------------------------
+news:
+  fallback:
+    limit: 4
+    per_page_limit: 4
+    deep_open_limit: 0
+
+# -----------------------------------------------------------------------------
+# 7. 移动端参数
+# -----------------------------------------------------------------------------
+mobile:
+  stock_app_package: "com.hexin.plat.android"
+  adb_path_candidates:
+    - "${ANDROID_ADB_PATH}"
+    - "${STOCK_ANALYSIS_ADB_PATH}"
+    - "/Applications/MuMuPlayer.app/Contents/MacOS/MuMuEmulator.app/Contents/MacOS/tools/adb"
+    - "/Applications/NoxAppPlayer.app/Contents/MacOS/adb"
+    - "/Applications/LDPlayer.app/Contents/MacOS/adb"
+    - "/Applications/BlueStacks.app/Contents/MacOS/HD-Adb"
+    - "~/Library/Android/sdk/platform-tools/adb"
+  swipe:
+    duration_ms: 250
+  discover:
+    max_swipes_concepts: 3
+    max_swipes_subthemes: 4
+
+# -----------------------------------------------------------------------------
+# 8. 数据抓取参数
+# -----------------------------------------------------------------------------
+fetchers:
+  # 东财竞价采集
+  eastmoney_auction:
+    samples: 8
+    interval_seconds: 2.0
+
+  # 分钟K线粒度（5=5分钟, 15=15分钟, 30=30分钟, 60=60分钟）
+  minute_klt: 5
+
+  # Infoway 分钟数据配置
+  infoway:
+    # API 配置
+    api_key: "${INFOWAY_API_KEY}"  # 从环境变量读取
+    endpoint: "wss://ws.infoway.io/v1/market"  # WebSocket 端点
+    rest_endpoint: "https://api.infoway.io/v1"   # REST API 端点
+    
+    # 连接参数
+    reconnect_interval: 5.0          # 重连间隔（秒）
+    heartbeat_interval: 30.0         # 心跳间隔（秒）
+    max_reconnect_attempts: 10       # 最大重连次数
+    
+    # 获取策略
+    fetch_strategy: "auto"           # auto|infoway|browser|none
+                                     # auto: 优先浏览器，不可用时使用Infoway
+                                     # infoway: 仅使用Infoway
+                                     # browser: 仅使用浏览器
+                                     # none: 禁用自动补抓
+    
+    # MCP Server 配置（可选，用于 mcporter 调用）
+    mcp_server: "infoway-mcp-server"
+    
+    # 数据质量参数
+    quality:
+      min_bars_for_valid: 100        # 最小有效条数
+      expected_session_bars: 240     # 预期一天条数

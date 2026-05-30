@@ -1,0 +1,15 @@
+{
+  "checkpoint": "close",
+  "logged_at": "2026-04-22T00:52:19+08:00",
+  "symbol": "002347.SZ",
+  "trade_date": "2026-04-21",
+  "items": [
+    {
+      "name": "隔夜次日预期",
+      "kind": "prediction",
+      "prediction": "次日分歧｜更像高低切换或强弱博弈，方向不宜单押",
+      "status": "pending_next_close",
+      "note": "已在收盘后固化次日预期"
+    }
+  ]
+}

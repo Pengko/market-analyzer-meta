@@ -1,0 +1,15 @@
+{
+  "checkpoint": "close",
+  "logged_at": "2026-04-22T00:54:34+08:00",
+  "symbol": "600703.SH",
+  "trade_date": "2026-04-21",
+  "items": [
+    {
+      "name": "隔夜次日预期",
+      "kind": "prediction",
+      "prediction": "次日偏弱｜次日优先防冲高承压或弱修复失败",
+      "status": "pending_next_close",
+      "note": "已在收盘后固化次日预期"
+    }
+  ]
+}

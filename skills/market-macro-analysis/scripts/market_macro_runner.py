@@ -731,11 +731,16 @@ def generate_conclusion(
 def build_market_macro_report(trade_date_text: str, top_n: int = 10) -> dict[str, Any]:
     """大盘板块分析主流程。"""
     now, time_source = resolve_now_china()
-    session = scenario_from_now(now)
-
     # 交易日校准
     resolved_date, cal_meta = resolve_trade_date_by_calendar(trade_date_text)
     trade_date_compact = resolved_date.replace("-", "")
+
+    # session 判断：盘中用实时，非盘中统一用盘后
+    raw_session = scenario_from_now(now)
+    if raw_session in ("上午盘中", "午间休盘", "下午盘中"):
+        session = raw_session
+    else:
+        session = "盘后"
 
     # Step 1: 大盘环境（传入交易日，区分实时/历史）
     market = analyze_market_environment(trade_date_compact)

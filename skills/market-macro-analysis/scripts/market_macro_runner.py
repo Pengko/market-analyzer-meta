@@ -735,10 +735,12 @@ def build_market_macro_report(trade_date_text: str, top_n: int = 10) -> dict[str
     resolved_date, cal_meta = resolve_trade_date_by_calendar(trade_date_text)
     trade_date_compact = resolved_date.replace("-", "")
 
-    # session 判断：盘中用实时，非盘中统一用盘后
-    raw_session = scenario_from_now(now)
-    if raw_session in ("上午盘中", "午间休盘", "下午盘中"):
-        session = raw_session
+    # session 判断：先看今天是不是交易日，非交易日一律盘后
+    today_open = latest_open_trade_date_on_or_before(now.strftime("%Y-%m-%d"))
+    is_today_trade_day = today_open == now.strftime("%Y-%m-%d")
+    if is_today_trade_day:
+        raw_session = scenario_from_now(now)
+        session = raw_session if raw_session in ("上午盘中", "午间休盘", "下午盘中") else "盘后"
     else:
         session = "盘后"
 

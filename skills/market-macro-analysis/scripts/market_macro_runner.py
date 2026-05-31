@@ -678,7 +678,96 @@ def analyze_news_catalysts(trade_date_text: str) -> dict[str, Any]:
 
 
 # ═══════════════════════════════════════════════════════
-# Step 5: 交易结论
+# Step 4: 成分股深度分析（复用 stock-deep-analysis 模块）
+# ═══════════════════════════════════════════════════════
+
+def analyze_stock_details(leading: list[dict], trade_date_compact: str) -> list[dict]:
+    """对龙头个股做深度分析（跳过市场/板块步骤，直接分析个股）。"""
+    from analysis.stock_trend_analyzer import (
+        analyze_trend_structure,
+        analyze_chip_structure,
+        analyze_volatility_context,
+        analyze_nineturn,
+    )
+    from financing_analyzer import (
+        build_fundamental,
+        analyze_financing_context,
+        build_pledge_analysis,
+        build_lockup_analysis,
+    )
+
+    details = []
+    for stock in leading:
+        ts_code = stock.get("ts_code", "")
+        if not ts_code:
+            continue
+
+        trade_date_text = f"{trade_date_compact[:4]}-{trade_date_compact[4:6]}-{trade_date_compact[6:8]}"
+        detail = {"ts_code": ts_code, "name": stock.get("name", "")}
+
+        # 趋势结构
+        try:
+            trend = analyze_trend_structure(ts_code, trade_date_text)
+            detail["trend"] = trend
+        except Exception:
+            detail["trend"] = {"status": "error"}
+
+        # 筹码分析
+        try:
+            chip = analyze_chip_structure(ts_code, trade_date_text)
+            detail["chip"] = chip
+        except Exception:
+            detail["chip"] = {"status": "error"}
+
+        # 波动率
+        try:
+            vol = analyze_volatility_context(ts_code, trade_date_text)
+            detail["volatility"] = vol
+        except Exception:
+            detail["volatility"] = {"status": "error"}
+
+        # 神奇九转
+        try:
+            nineturn = analyze_nineturn(ts_code, trade_date_text)
+            detail["nineturn"] = nineturn
+        except Exception:
+            detail["nineturn"] = {"status": "error"}
+
+        # 基本面（PE/PB/估值）
+        try:
+            fund = build_fundamental(ts_code, trade_date_compact)
+            detail["fundamental"] = fund
+        except Exception:
+            detail["fundamental"] = {"status": "error"}
+
+        # 融资融券
+        try:
+            financing = analyze_financing_context(ts_code, trade_date_text)
+            detail["financing"] = financing
+        except Exception:
+            detail["financing"] = {"status": "error"}
+
+        # 股权质押
+        try:
+            pledge = build_pledge_analysis(ts_code, trade_date_compact)
+            detail["pledge"] = pledge
+        except Exception:
+            detail["pledge"] = {"status": "error"}
+
+        # 限售解禁
+        try:
+            lockup = build_lockup_analysis(ts_code, trade_date_text)
+            detail["lockup"] = lockup
+        except Exception:
+            detail["lockup"] = {"status": "error"}
+
+        details.append(detail)
+
+    return details
+
+
+# ═══════════════════════════════════════════════════════
+# Step 6: 交易结论
 # ═══════════════════════════════════════════════════════
 
 def generate_conclusion(
@@ -686,8 +775,9 @@ def generate_conclusion(
     sectors: dict,
     leading: list,
     news: dict,
+    stock_details: list[dict] | None = None,
 ) -> dict[str, Any]:
-    """Step 5: 生成交易结论。"""
+    """Step 6: 生成交易结论。"""
     strength = market.get("strength", "中性")
     top_theme = sectors.get("top_theme", "无")
     cycle = sectors.get("cycle", "未知")
@@ -710,9 +800,32 @@ def generate_conclusion(
     ]
     if lu_count > 0:
         summary_parts.append(f"涨停{lu_count}家")
-    if leading:
-        names = [s["name"] for s in leading[:3]]
-        summary_parts.append(f"关注：{'、'.join(names)}")
+
+    # 从成分股分析中提取关键信号
+    if stock_details:
+        bullish_stocks = []
+        bearish_stocks = []
+        for d in stock_details:
+            chip = d.get("chip", {})
+            trend = d.get("trend", {})
+            fund = d.get("fundamental", {})
+            if chip.get("status") == "available":
+                wr = chip.get("winner_rate", 50)
+                if wr > 80:
+                    bullish_stocks.append(f"{d['name']}获利盘{wr:.0f}%")
+                elif wr < 30:
+                    bearish_stocks.append(f"{d['name']}套牢盘{100-wr:.0f}%")
+            if fund.get("status") == "available":
+                pe_val = fund.get("pe_valuation", "")
+                if pe_val in ("高估", "偏高"):
+                    bearish_stocks.append(f"{d['name']}估值{pe_val}")
+                elif pe_val in ("低估", "偏低"):
+                    bullish_stocks.append(f"{d['name']}估值{pe_val}")
+
+        if bullish_stocks:
+            summary_parts.append(f"偏多信号：{'、'.join(bullish_stocks[:3])}")
+        if bearish_stocks:
+            summary_parts.append(f"偏空信号：{'、'.join(bearish_stocks[:3])}")
 
     return {
         "direction": direction,
@@ -753,11 +866,14 @@ def build_market_macro_report(trade_date_text: str, top_n: int = 10) -> dict[str
     # Step 3: 龙头个股
     leading = find_leading_stocks(sectors, trade_date_compact)
 
-    # Step 4: 消息催化
+    # Step 4: 成分股深度分析（复用 stock-deep-analysis 模块）
+    stock_details = analyze_stock_details(leading[:5], trade_date_compact)
+
+    # Step 5: 消息催化
     news = analyze_news_catalysts(trade_date_text)
 
-    # Step 5: 交易结论
-    conclusion = generate_conclusion(market, sectors, leading, news)
+    # Step 6: 交易结论
+    conclusion = generate_conclusion(market, sectors, leading, news, stock_details)
 
     return {
         "analysis_type": "market_macro",
@@ -770,6 +886,7 @@ def build_market_macro_report(trade_date_text: str, top_n: int = 10) -> dict[str
         "market_environment": market,
         "sector_hotspots": sectors,
         "leading_stocks": leading,
+        "stock_details": stock_details,
         "news_catalysts": news,
         "conclusion": conclusion,
     }
@@ -908,7 +1025,39 @@ def render_markdown(report: dict) -> str:
         lines.append("- 未找到龙头个股数据")
     lines.append("")
 
-    # Step 4: 消息催化
+    # Step 4: 成分股深度分析
+    stock_details = report.get("stock_details", [])
+    if stock_details:
+        lines.append("### 成分股深度分析")
+        lines.append("")
+        lines.append("| 股票 | PE | PE估值 | PB | 获利盘 | 套牢盘 | 集中度 | 九转 | 质押 |")
+        lines.append("|------|-----|--------|-----|--------|--------|--------|------|------|")
+        for d in stock_details:
+            fund = d.get("fundamental", {})
+            chip = d.get("chip", {})
+            nineturn = d.get("nineturn", {})
+            pledge = d.get("pledge", {})
+
+            pe = f"{fund.get('pe_ttm', 0):.1f}" if fund.get("status") == "available" and fund.get("pe_ttm") else "-"
+            pe_val = fund.get("pe_valuation", "-") if fund.get("status") == "available" else "-"
+            pb = f"{fund.get('pb', 0):.1f}" if fund.get("status") == "available" and fund.get("pb") else "-"
+
+            wr = chip.get("winner_rate")
+            winner = f"{wr:.0f}%" if wr is not None and chip.get("status") == "available" else "-"
+            trapped = f"{100-wr:.0f}%" if wr is not None and chip.get("status") == "available" else "-"
+            conc = chip.get("details", {}).get("cost_concentration")
+            concentration = f"{conc:.0%}" if conc is not None else "-"
+
+            nt = nineturn.get("summary", "-") if nineturn.get("status") == "available" else "-"
+            if len(nt) > 15:
+                nt = nt[:15] + "..."
+
+            pl = pledge.get("risk_level", "-") if pledge.get("status") == "available" else "-"
+
+            lines.append(f"| {d['name']} | {pe} | {pe_val} | {pb} | {winner} | {trapped} | {concentration} | {nt} | {pl} |")
+        lines.append("")
+
+    # Step 5: 消息催化
     news = report.get("news_catalysts", {})
     lines.append("## 四、消息催化")
     lines.append("")

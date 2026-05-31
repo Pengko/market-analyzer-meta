@@ -121,3 +121,4 @@ intent_classifier.py（意图识别）
 | `skills/market-macro-analysis/SKILL.md` | 大盘板块分析规范 |
 | `skills/news-driven-analysis/SKILL.md` | 消息面分析规范 |
 | `skills/tushare-pro/SKILL.md` | 数据同步规范（日线/周线/月线/指数/概念） |
+| `references/check-data-freshness-bug.md` | check_data_freshness.py 日期格式bug与降级指南

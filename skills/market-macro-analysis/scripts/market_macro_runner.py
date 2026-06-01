@@ -1165,11 +1165,23 @@ def main() -> int:
 
     report = build_market_macro_report(trade_date_text, top_n=args.top)
 
+    # 保存报告到文件（独立路径，不混在个股分析目录）
+    report_dir = Path.home() / "quant-data" / "市场分析" / "reports" / "market_macro"
+    td_parts = trade_date_text.split("-")
+    out_dir = report_dir / td_parts[0] / td_parts[1] / td_parts[2]
+    out_dir.mkdir(parents=True, exist_ok=True)
+
     if args.format == "json":
+        out_path = out_dir / f"market_macro_{trade_date_text}.json"
+        out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
-        print(render_markdown(report))
+        md = render_markdown(report)
+        out_path = out_dir / f"market_macro_{trade_date_text}.md"
+        out_path.write_text(md, encoding="utf-8")
+        print(md)
 
+    print(f"\n报告已保存到: {out_path}", file=sys.stderr)
     return 0
 
 

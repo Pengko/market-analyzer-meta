@@ -687,13 +687,10 @@ def analyze_stock_details(leading: list[dict], trade_date_compact: str) -> list[
         analyze_trend_structure,
         analyze_chip_structure,
         analyze_volatility_context,
-        analyze_nineturn,
     )
     from financing_analyzer import (
         build_fundamental,
         analyze_financing_context,
-        build_pledge_analysis,
-        build_lockup_analysis,
     )
 
     details = []
@@ -726,13 +723,6 @@ def analyze_stock_details(leading: list[dict], trade_date_compact: str) -> list[
         except Exception:
             detail["volatility"] = {"status": "error"}
 
-        # 神奇九转
-        try:
-            nineturn = analyze_nineturn(ts_code, trade_date_text)
-            detail["nineturn"] = nineturn
-        except Exception:
-            detail["nineturn"] = {"status": "error"}
-
         # 基本面（PE/PB/估值）
         try:
             fund = build_fundamental(ts_code, trade_date_compact)
@@ -746,20 +736,6 @@ def analyze_stock_details(leading: list[dict], trade_date_compact: str) -> list[
             detail["financing"] = financing
         except Exception:
             detail["financing"] = {"status": "error"}
-
-        # 股权质押
-        try:
-            pledge = build_pledge_analysis(ts_code, trade_date_compact)
-            detail["pledge"] = pledge
-        except Exception:
-            detail["pledge"] = {"status": "error"}
-
-        # 限售解禁
-        try:
-            lockup = build_lockup_analysis(ts_code, trade_date_text)
-            detail["lockup"] = lockup
-        except Exception:
-            detail["lockup"] = {"status": "error"}
 
         details.append(detail)
 
@@ -776,62 +752,67 @@ def generate_conclusion(
     leading: list,
     news: dict,
     stock_details: list[dict] | None = None,
+    agent_direction: dict | None = None,
+    agent_news: dict | None = None,
+    agent_rotation: dict | None = None,
 ) -> dict[str, Any]:
-    """Step 6: 生成交易结论。"""
+    """Step 7: 生成交易结论（融合三个 Agent 结果）。"""
     strength = market.get("strength", "中性")
     top_theme = sectors.get("top_theme", "无")
     cycle = sectors.get("cycle", "未知")
     kpl = sectors.get("kpl", {})
     lu_count = kpl.get("total_lu", 0)
 
-    if strength in ("偏强", "中性偏强"):
-        direction = "偏多"
+    # 从 Agent-市场方向获取多空判断
+    overall = (agent_direction or {}).get("overall", {})
+    direction = overall.get("direction", "中性")
+    pullback_status = overall.get("pullback_status", "未知")
+
+    # 从 Agent-消息热点获取风险评估
+    risk = (agent_news or {}).get("risk_assessment", {})
+    overall_risk = risk.get("overall_risk", "未知")
+    high_risk_sectors = risk.get("high_risk_sectors", [])
+    money_flow = (agent_news or {}).get("money_flow_prediction", {})
+
+    # 从 Agent-板块轮动获取轮动预判
+    rotation = (agent_rotation or {}).get("rotation_status", "未知")
+    rotation_pred = (agent_rotation or {}).get("rotation_prediction", {})
+    pullback_ready = [p["name"] for p in (agent_rotation or {}).get("pullback_ready", [])[:3]]
+
+    # 综合判断
+    if direction in ("偏多", "中性偏多") and overall_risk == "低":
         action = "可积极参与"
-    elif strength == "中性偏弱":
-        direction = "中性"
-        action = "观望为主"
-    else:
-        direction = "偏空"
+    elif direction == "中性" and overall_risk == "中等":
+        action = "观望为主，等方向确认"
+    elif direction in ("偏弱", "中性偏弱") or overall_risk == "高":
         action = "防守为主"
+    else:
+        action = "观望为主"
 
     summary_parts = [
-        f"市场{strength}，{direction}",
+        f"市场{direction}，{action}",
         f"热点题材：{top_theme}（{cycle}阶段）",
     ]
     if lu_count > 0:
         summary_parts.append(f"涨停{lu_count}家")
-
-    # 从成分股分析中提取关键信号
-    if stock_details:
-        bullish_stocks = []
-        bearish_stocks = []
-        for d in stock_details:
-            chip = d.get("chip", {})
-            trend = d.get("trend", {})
-            fund = d.get("fundamental", {})
-            if chip.get("status") == "available":
-                wr = chip.get("winner_rate", 50)
-                if wr > 80:
-                    bullish_stocks.append(f"{d['name']}获利盘{wr:.0f}%")
-                elif wr < 30:
-                    bearish_stocks.append(f"{d['name']}套牢盘{100-wr:.0f}%")
-            if fund.get("status") == "available":
-                pe_val = fund.get("pe_valuation", "")
-                if pe_val in ("高估", "偏高"):
-                    bearish_stocks.append(f"{d['name']}估值{pe_val}")
-                elif pe_val in ("低估", "偏低"):
-                    bullish_stocks.append(f"{d['name']}估值{pe_val}")
-
-        if bullish_stocks:
-            summary_parts.append(f"偏多信号：{'、'.join(bullish_stocks[:3])}")
-        if bearish_stocks:
-            summary_parts.append(f"偏空信号：{'、'.join(bearish_stocks[:3])}")
+    if high_risk_sectors:
+        summary_parts.append(f"高位风险：{','.join(high_risk_sectors[:2])}")
+    if pullback_ready:
+        summary_parts.append(f"回调到位：{','.join(pullback_ready[:2])}")
+    if money_flow.get("flow_direction"):
+        summary_parts.append(money_flow["flow_direction"])
 
     return {
         "direction": direction,
         "action": action,
         "top_theme": top_theme,
         "cycle": cycle,
+        "rotation": rotation,
+        "risk_level": overall_risk,
+        "pullback_status": pullback_status,
+        "pullback_ready": pullback_ready,
+        "money_flow": money_flow,
+        "rotation_prediction": rotation_pred,
         "leading_stocks": leading[:5],
         "summary": "；".join(summary_parts),
     }
@@ -866,14 +847,29 @@ def build_market_macro_report(trade_date_text: str, top_n: int = 10) -> dict[str
     # Step 3: 龙头个股
     leading = find_leading_stocks(sectors, trade_date_compact)
 
-    # Step 4: 成分股深度分析（复用 stock-deep-analysis 模块）
+    # Step 4: 三个 Agent 并行执行
+    from concurrent.futures import ThreadPoolExecutor
+    from agents.market_direction_agent import analyze_market_direction
+    from agents.news_hotspot_agent import analyze_news_hotspot
+    from agents.sector_rotation_agent import analyze_sector_rotation
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        future_direction = executor.submit(analyze_market_direction, trade_date_compact)
+        future_news = executor.submit(analyze_news_hotspot, trade_date_compact)
+        future_rotation = executor.submit(analyze_sector_rotation, trade_date_compact)
+
+        agent_direction = future_direction.result()
+        agent_news = future_news.result()
+        agent_rotation = future_rotation.result()
+
+    # Step 5: 成分股深度分析（复用 stock-deep-analysis 模块）
     stock_details = analyze_stock_details(leading[:5], trade_date_compact)
 
-    # Step 5: 消息催化
+    # Step 6: 消息催化
     news = analyze_news_catalysts(trade_date_text)
 
-    # Step 6: 交易结论
-    conclusion = generate_conclusion(market, sectors, leading, news, stock_details)
+    # Step 7: 交易结论（融合三个 Agent 结果）
+    conclusion = generate_conclusion(market, sectors, leading, news, stock_details, agent_direction, agent_news, agent_rotation)
 
     return {
         "analysis_type": "market_macro",
@@ -888,6 +884,9 @@ def build_market_macro_report(trade_date_text: str, top_n: int = 10) -> dict[str
         "leading_stocks": leading,
         "stock_details": stock_details,
         "news_catalysts": news,
+        "agent_direction": agent_direction,
+        "agent_news": agent_news,
+        "agent_rotation": agent_rotation,
         "conclusion": conclusion,
     }
 
@@ -943,6 +942,82 @@ def render_markdown(report: dict) -> str:
     else:
         lines.append(f"- 获取失败：{market.get('reason', '未知错误')}")
     lines.append("")
+
+    # Agent-市场方向
+    agent_dir = report.get("agent_direction", {})
+    if agent_dir.get("status") == "available":
+        overall = agent_dir.get("overall", {})
+        lines.append("### 市场方向判断")
+        lines.append("")
+        lines.append(f"- 多空方向：**{overall.get('direction', 'N/A')}**")
+        lines.append(f"- 回踩状态：{overall.get('pullback_status', 'N/A')}")
+        levels = overall.get("key_levels", {})
+        if levels.get("support"):
+            lines.append(f"- 支撑位：{', '.join(str(s) for s in levels['support'])}")
+        if levels.get("resistance"):
+            lines.append(f"- 压力位：{', '.join(str(r) for r in levels['resistance'])}")
+        lines.append("")
+        for idx_name, idx_data in agent_dir.get("indices", {}).items():
+            if idx_data.get("status") != "available":
+                continue
+            rsi = idx_data.get("rsi")
+            macd_sig = idx_data.get("macd_signal", "")
+            ma_rel = idx_data.get("ma_relation", "")
+            lines.append(f"- {idx_name}：RSI {rsi}（{idx_data.get('rsi_signal', '')}），MACD {macd_sig}，{ma_rel}")
+        lines.append("")
+
+    # Agent-消息热点
+    agent_news = report.get("agent_news", {})
+    if agent_news.get("status") == "available":
+        lines.append("### 消息热点分析")
+        lines.append("")
+        risk = agent_news.get("risk_assessment", {})
+        lines.append(f"- 热点风险：**{risk.get('overall_risk', 'N/A')}**")
+        if risk.get("high_risk_sectors"):
+            lines.append(f"- 高位风险板块：{', '.join(risk['high_risk_sectors'])}")
+        hot_dirs = agent_news.get("hot_directions", [])
+        if hot_dirs:
+            lines.append("")
+            lines.append("| 方向 | 类型 | 热度 | 今日涨幅 | 风险 |")
+            lines.append("|------|------|------|----------|------|")
+            for h in hot_dirs[:8]:
+                lines.append(f"| {h['name']} | {h['type']} | {h['hot']:.0f} | {h['pct_change']:+.2f}% | {h['risk']} |")
+        boards = agent_news.get("highest_boards", [])
+        if boards:
+            lines.append("")
+            lines.append("**最高标：**")
+            for b in boards[:5]:
+                lines.append(f"- {b['name']}（{b['code']}）{b['days']}连板 — {b['type']}")
+        mf = agent_news.get("money_flow_prediction", {})
+        if mf.get("flow_direction"):
+            lines.append(f"\n- 资金流向：{mf['flow_direction']}")
+        lines.append("")
+
+    # Agent-板块轮动
+    agent_rot = report.get("agent_rotation", {})
+    if agent_rot.get("status") == "available":
+        lines.append("### 板块轮动分析")
+        lines.append("")
+        lines.append(f"- 轮动阶段：**{agent_rot.get('rotation_status', 'N/A')}**")
+        hot_sectors = agent_rot.get("hot_sectors", [])
+        if hot_sectors:
+            lines.append("")
+            lines.append("**近5日强势板块：**")
+            lines.append("")
+            lines.append("| 板块 | 今日涨幅 | 5日涨幅 | 热度 | 龙头 |")
+            lines.append("|------|----------|---------|------|------|")
+            for s in hot_sectors[:8]:
+                lines.append(f"| {s['name']} | {s['pct_today']:+.2f}% | {s['pct_5d']:+.1f}% | {s['hot']:.0f} | {s.get('lead_stock', '')} |")
+        pullback = agent_rot.get("pullback_ready", [])
+        if pullback:
+            lines.append("")
+            lines.append("**回调到位板块：**")
+            for p in pullback:
+                lines.append(f"- {p['name']}：{p['pullback_reason']}")
+        pred = agent_rot.get("rotation_prediction", {})
+        if pred.get("prediction"):
+            lines.append(f"\n- 轮动预判：{pred['prediction']}")
+        lines.append("")
 
     # Step 2: 板块热点
     sectors = report.get("sector_hotspots", {})
@@ -1030,13 +1105,11 @@ def render_markdown(report: dict) -> str:
     if stock_details:
         lines.append("### 成分股深度分析")
         lines.append("")
-        lines.append("| 股票 | PE | PE估值 | PB | 获利盘 | 套牢盘 | 集中度 | 九转 | 质押 |")
-        lines.append("|------|-----|--------|-----|--------|--------|--------|------|------|")
+        lines.append("| 股票 | PE | PE估值 | PB | 获利盘 | 套牢盘 | 集中度 |")
+        lines.append("|------|-----|--------|-----|--------|--------|--------|")
         for d in stock_details:
             fund = d.get("fundamental", {})
             chip = d.get("chip", {})
-            nineturn = d.get("nineturn", {})
-            pledge = d.get("pledge", {})
 
             pe = f"{fund.get('pe_ttm', 0):.1f}" if fund.get("status") == "available" and fund.get("pe_ttm") else "-"
             pe_val = fund.get("pe_valuation", "-") if fund.get("status") == "available" else "-"
@@ -1048,13 +1121,7 @@ def render_markdown(report: dict) -> str:
             conc = chip.get("details", {}).get("cost_concentration")
             concentration = f"{conc:.0%}" if conc is not None else "-"
 
-            nt = nineturn.get("summary", "-") if nineturn.get("status") == "available" else "-"
-            if len(nt) > 15:
-                nt = nt[:15] + "..."
-
-            pl = pledge.get("risk_level", "-") if pledge.get("status") == "available" else "-"
-
-            lines.append(f"| {d['name']} | {pe} | {pe_val} | {pb} | {winner} | {trapped} | {concentration} | {nt} | {pl} |")
+            lines.append(f"| {d['name']} | {pe} | {pe_val} | {pb} | {winner} | {trapped} | {concentration} |")
         lines.append("")
 
     # Step 5: 消息催化

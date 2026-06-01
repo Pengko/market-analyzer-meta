@@ -64,8 +64,17 @@ def fetch_local_news(trade_date_text: str) -> dict[str, Any]:
                 if isinstance(data, list):
                     all_items.extend(data)
                 elif isinstance(data, dict):
-                    # 可能是 news_pipeline 格式
-                    if "articles" in data:
+                    # news_pipeline 格式：news_sentiment.main_sources
+                    sentiment = data.get("news_sentiment", {})
+                    sources = sentiment.get("main_sources", [])
+                    if sources:
+                        for s in sources:
+                            all_items.append({
+                                "title": s.get("title", ""),
+                                "source": s.get("source", ""),
+                                "published_at": s.get("published_at", ""),
+                            })
+                    elif "articles" in data:
                         all_items.extend(data["articles"])
                     elif "news" in data:
                         all_items.extend(data["news"])
@@ -83,17 +92,67 @@ def fetch_local_news(trade_date_text: str) -> dict[str, Any]:
 
 
 def fetch_trendradar_news(trade_date_text: str) -> dict[str, Any]:
-    """尝试从 TrendRadar MCP 获取消息。"""
-    try:
-        # 检查 trendradar_mcp_cli.py 是否存在
-        tredarar_cli = Path.home() / "agent-skills" / "custom" / "trendradar-mcp" / "scripts" / "trendradar_mcp_cli.py"
-        if not tredarar_cli.exists():
-            return {"status": "missing", "reason": "TrendRadar MCP 未安装", "items": []}
+    """通过 TrendRadar MCP 获取消息（与个股分析相同的数据渠道）。"""
+    import subprocess
+    import json as _json
 
-        # 简化：直接读取本地数据
-        return {"status": "skipped", "reason": "TrendRadar MCP 调用需要单独实现", "items": []}
-    except Exception as e:
-        return {"status": "error", "reason": str(e), "items": []}
+    # 查找 TrendRadar MCP CLI
+    tredarar_cli = Path.home() / "agent-skills" / "custom" / "trendradar-mcp" / "scripts" / "trendradar_mcp_cli.py"
+    tredarar_python = Path.home() / "Documents" / "TrendRadar" / ".venv" / "bin" / "python"
+
+    if not tredarar_cli.exists():
+        return {"status": "missing", "reason": "TrendRadar MCP 未安装", "items": []}
+
+    python_cmd = str(tredarar_python) if tredarar_python.exists() else "python3"
+
+    def _call_mcp(tool_name: str, arguments: dict) -> dict:
+        """调用 TrendRadar MCP CLI。"""
+        args_json = _json.dumps(arguments, ensure_ascii=False)
+        try:
+            result = subprocess.run(
+                [python_cmd, str(tredarar_cli), "call", tool_name, "--args-json", args_json],
+                capture_output=True, text=True, timeout=30, check=False,
+            )
+        except Exception as exc:
+            return {"status": "error", "error": str(exc)}
+
+        if result.returncode != 0:
+            return {"status": "error", "error": result.stderr or "non-zero exit"}
+
+        try:
+            wrapper = _json.loads(result.stdout)
+        except _json.JSONDecodeError:
+            return {"status": "error", "error": "invalid JSON"}
+
+        content = wrapper.get("content", [])
+        for item in content:
+            if item.get("type") == "text" and "text" in item:
+                try:
+                    return _json.loads(item["text"])
+                except _json.JSONDecodeError:
+                    return {"status": "error", "error": "invalid text JSON"}
+        return {"status": "error", "error": "no text content"}
+
+    # 热榜全量
+    hot_result = _call_mcp("get_latest_news", {"limit": 500, "include_url": True})
+    hot_raw = hot_result.get("data", []) if hot_result.get("success") else []
+
+    # RSS 全量
+    rss_result = _call_mcp("get_latest_rss", {"limit": 500, "days": 3, "include_summary": True})
+    rss_raw = rss_result.get("data", []) if rss_result.get("success") else []
+
+    all_items = hot_raw + rss_raw
+
+    if not all_items:
+        return {"status": "missing", "reason": "TrendRadar MCP 返回空数据", "items": []}
+
+    return {
+        "status": "available",
+        "count": len(all_items),
+        "hot_count": len(hot_raw),
+        "rss_count": len(rss_raw),
+        "items": all_items,
+    }
 
 
 # ── Step 2: 消息解读 ──────────────────────────────────

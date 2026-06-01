@@ -1166,7 +1166,7 @@ def main() -> int:
     report = build_market_macro_report(trade_date_text, top_n=args.top)
 
     # 保存报告到文件（独立路径，不混在个股分析目录）
-    report_dir = Path.home() / "quant-data" / "市场分析" / "reports" / "market_macro"
+    report_dir = Path.home() / "quant-data" / "市场分析" / "reports" / "大盘分析报告"
     td_parts = trade_date_text.split("-")
     out_dir = report_dir / td_parts[0] / td_parts[1] / td_parts[2]
     out_dir.mkdir(parents=True, exist_ok=True)

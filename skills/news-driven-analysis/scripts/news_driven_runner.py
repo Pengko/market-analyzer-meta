@@ -275,16 +275,16 @@ def classify_news(items: list[dict]) -> list[dict]:
 
 def map_to_sectors(classified_news: list[dict]) -> dict[str, Any]:
     """Step 3: 将消息映射到板块。"""
-    # 行业关键词映射
+    # 行业关键词映射（映射到实际 DC 概念名称）
     sector_mapping = {
-        "AI": ["人工智能", "AI", "大模型", "算力", "GPU", "芯片"],
-        "面板": ["面板", "LCD", "OLED", "显示"],
-        "新能源": ["光伏", "风电", "储能", "新能源", "锂电"],
-        "半导体": ["半导体", "集成电路", "晶圆", "封测"],
-        "消费电子": ["手机", "消费电子", "苹果", "华为"],
+        "AI芯片": ["AI芯片", "人工智能", "AI", "大模型", "算力", "GPU", "芯片"],
+        "折叠屏": ["面板", "LCD", "OLED", "显示", "京东方", "华映", "彩虹股份", "TCL"],
+        "消费电子": ["消费电子", "手机", "苹果", "华为", "小米"],
+        "半导体": ["半导体", "集成电路", "晶圆", "封测", "中芯"],
+        "光伏": ["光伏", "风电", "储能", "新能源", "锂电", "宁德时代", "比亚迪"],
         "医药": ["医药", "创新药", "疫苗", "医疗器械"],
-        "金融": ["银行", "券商", "保险", "金融"],
-        "地产": ["房地产", "地产", "楼市"],
+        "银行": ["银行", "券商", "保险", "金融", "地产", "房地产"],
+        "有色金属": ["钢铁", "煤炭", "有色", "黄金", "铜", "铝", "化工", "稀土", "锂"],
     }
 
     sector_hits: dict[str, int] = {}
@@ -325,39 +325,80 @@ def find_beneficiary_stocks(sector_mapping: dict, trade_date_text: str) -> list[
 
     trade_date_compact = trade_date_text.replace("-", "")
     stock_data_root = cfg.paths("stock_data_root")
-    cons_root = stock_data_root / "theme_data" / "dc_concept_cons"
+    dc_concept_root = stock_data_root / "theme_data" / "dc_concept"
+    dc_concept_cons_root = stock_data_root / "theme_data" / "dc_concept_cons"
+
+    # 读取概念名称→代码映射
+    concept_name_to_code = {}
+    dc_concept_parquet = dc_concept_root / "2026.parquet"
+    if dc_concept_parquet.exists():
+        try:
+            import pyarrow.parquet as pq
+            df = pq.read_table(dc_concept_parquet).to_pandas()
+            for _, r in df.iterrows():
+                name = str(r.get("name", ""))
+                code = str(r.get("theme_code", ""))
+                if name and code:
+                    concept_name_to_code[name] = code
+        except Exception:
+            pass
+
+    # 读取 DC 成分股数据（单个 parquet 文件）
+    cons_parquet = dc_concept_cons_root / "2026.parquet"
+    cons_df = None
+    if cons_parquet.exists():
+        try:
+            import pyarrow.parquet as pq
+            cons_df = pq.read_table(cons_parquet).to_pandas()
+        except Exception:
+            pass
+
+    if cons_df is None:
+        return []
 
     beneficiaries = []
+    seen_codes = set()
+
     for sector_info in sector_mapping.get("sectors", [])[:3]:
         sector_name = sector_info.get("name", "")
         if not sector_name:
             continue
 
-        # 查找该板块的成分股
-        cons_files = list(cons_root.rglob(f"*{sector_name}*.parquet"))
-        if not cons_files:
+        # 查找该板块的概念代码
+        theme_code = concept_name_to_code.get(sector_name)
+        if not theme_code:
+            for name, code in concept_name_to_code.items():
+                if sector_name in name or name in sector_name:
+                    theme_code = code
+                    break
+        if not theme_code:
             continue
 
+        # 从 dc_concept_cons 中筛选该概念的成分股
         try:
-            rows = _read_parquet_rows(cons_files[0])
-            day_rows = [r for r in rows if str(r.get("trade_date", "")).strip() <= trade_date_compact]
-            if not day_rows:
+            concept_rows = cons_df[cons_df["theme_code"] == theme_code]
+            if concept_rows.empty:
                 continue
 
-            for r in day_rows[:3]:
-                ts_code = r.get("ts_code", "")
-                name = r.get("name", "")
-                if ts_code and name:
+            # 取最新日期
+            latest = concept_rows["trade_date"].max()
+            concept_rows = concept_rows[concept_rows["trade_date"] == latest]
+
+            for _, r in concept_rows.head(5).iterrows():
+                ts_code = str(r.get("ts_code", ""))
+                name = str(r.get("name", ""))
+                if ts_code and ts_code not in seen_codes:
+                    seen_codes.add(ts_code)
                     beneficiaries.append({
                         "ts_code": ts_code,
                         "name": name,
                         "sector": sector_name,
-                        "reason": f"{sector_name}板块受益",
+                        "reason": f"{sector_name}板块成分股",
                     })
         except Exception:
             continue
 
-    return beneficiaries[:5]
+    return beneficiaries[:10]
 
 
 # ── Step 5: 大盘环境验证 ──────────────────────────────

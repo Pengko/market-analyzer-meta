@@ -155,6 +155,68 @@ def fetch_trendradar_news(trade_date_text: str) -> dict[str, Any]:
     }
 
 
+def fetch_browser_news(trade_date_text: str) -> dict[str, Any]:
+    """浏览器 fallback：通过 fetch_browser_news.py 抓取东财/财联社新闻。"""
+    import subprocess
+
+    script = Path.home() / ".openclaw" / "skills" / "custom" / "market-news-intelligence" / "scripts" / "fetch_browser_news.py"
+    if not script.exists():
+        return {"status": "missing", "reason": "browser script not found", "items": []}
+
+    output_dir = Path.home() / "quant-data" / "tushare" / "消息面数据" / "raw" / "browser_news"
+    td_parts = trade_date_text.split("-")
+    output_path = output_dir / td_parts[0] / td_parts[1] / td_parts[2] / f"browser_news_general_{trade_date_text}.json"
+
+    # 已有缓存直接读取
+    if output_path.exists():
+        try:
+            cached = json.loads(output_path.read_text(encoding="utf-8"))
+            articles = cached.get("articles", [])
+            return {
+                "status": "available",
+                "count": len(articles),
+                "items": [{"title": a.get("title", ""), "source": a.get("source", ""), "published_at": a.get("published_at", "")} for a in articles],
+                "source": "browser_cached",
+            }
+        except Exception:
+            pass
+
+    # 调用 fetch_browser_news.py
+    cmd = [
+        "python3", str(script),
+        "--trade-date", trade_date_text,
+        "--preset", "eastmoney", "cls",
+        "--stock-name", "A股大盘",
+        "--limit", "20",
+        "--headless",
+    ]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, check=False)
+    except subprocess.TimeoutExpired:
+        return {"status": "timeout", "reason": "browser timeout", "items": []}
+    except Exception as exc:
+        return {"status": "error", "reason": str(exc), "items": []}
+
+    if result.returncode != 0:
+        return {"status": "error", "reason": result.stderr[:200], "items": []}
+
+    if output_path.exists():
+        try:
+            cached = json.loads(output_path.read_text(encoding="utf-8"))
+            articles = cached.get("articles", [])
+            return {
+                "status": "available",
+                "count": len(articles),
+                "items": [{"title": a.get("title", ""), "source": a.get("source", ""), "published_at": a.get("published_at", "")} for a in articles],
+                "source": "browser",
+            }
+        except Exception:
+            pass
+
+    return {"status": "missing", "reason": "browser output not found", "items": []}
+
+
 # ── Step 2: 消息解读 ──────────────────────────────────
 
 def classify_news(items: list[dict]) -> list[dict]:
@@ -406,13 +468,17 @@ def build_news_driven_report(
     now, time_source = resolve_now_china()
     session = scenario_from_now(now)
 
-    # Step 1: 消息获取
+    # Step 1: 消息获取（本地优先 → TrendRadar MCP → 浏览器 fallback）
     news = fetch_local_news(trade_date_text)
     if news.get("status") != "available":
-        # 尝试 TrendRadar
         trendar = fetch_trendradar_news(trade_date_text)
         if trendar.get("status") == "available":
             news = trendar
+        else:
+            # 浏览器 fallback
+            browser = fetch_browser_news(trade_date_text)
+            if browser.get("status") == "available":
+                news = browser
 
     items = news.get("items", [])
 

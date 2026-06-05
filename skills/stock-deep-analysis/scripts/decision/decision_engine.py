@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from common import STOCK_DATA_ROOT
 from data.data_access import load_daily_row, load_daily_rows_for_symbols, next_trade_dates_compact
+from data.parquet_io import save_analysis_parquet
 from render.report_renderer import (
     render_pending_validation_markdown,
     render_status_text,
@@ -699,40 +700,12 @@ def append_checkpoint_markdown(target: Path, entry: dict[str, Any]) -> None:
         f.write('\n'.join(lines) + '\n')
 
 
-def append_checkpoint_jsonl(target_jsonl: Path, entry: dict[str, Any]) -> None:
-    target_jsonl.write_text(json.dumps(entry, ensure_ascii=False, indent=2), encoding='utf-8')
-
-
 def sanitize_report_name(name: str | None) -> str:
     text = str(name or '').strip()
     if not text:
         return ''
     text = text.replace('/', '_').replace('\\', '_')
     return text
-
-
-def write_validation_payload(target_validation: Path, payload: dict, checkpoint: str, entry: dict[str, Any]) -> None:
-    tracking = payload.get('validation_tracking') or {}
-    content = {
-        'symbol': payload.get('symbol'),
-        'trade_date': payload.get('trade_date'),
-        'analysis_time': payload.get('analysis_time'),
-        'checkpoint': checkpoint,
-        'record_status': tracking.get('record_status'),
-        'is_latest_trade_date': tracking.get('is_latest_trade_date'),
-        'should_force_pending_by_time': tracking.get('should_force_pending_by_time'),
-        'pending_guard_reason': tracking.get('pending_guard_reason'),
-        't_plus_1_trade_date': tracking.get('t_plus_1_trade_date'),
-        't_plus_2_trade_date': tracking.get('t_plus_2_trade_date'),
-        'now_trade_date': tracking.get('now_trade_date'),
-        'latest_observed_trade_date': tracking.get('latest_observed_trade_date'),
-        'symbol_latest_trade_date': tracking.get('symbol_latest_trade_date'),
-        'browser_trade_date_confirmed': tracking.get('browser_trade_date_confirmed'),
-        'local_data_synced_to_trade_date': tracking.get('local_data_synced_to_trade_date'),
-        'checks': tracking.get('checks') or [],
-        'latest_checkpoint': entry,
-    }
-    target_validation.write_text(json.dumps(content, ensure_ascii=False, indent=2), encoding='utf-8')
 
 
 def persist_pending_validation(payload: dict, checkpoint: str) -> str | None:
@@ -744,14 +717,14 @@ def persist_pending_validation(payload: dict, checkpoint: str) -> str | None:
     checkpoint_label = CHECKPOINT_FILE_LABELS.get(checkpoint, checkpoint or '未分类')
     stock_name = sanitize_report_name(payload.get('stock_name'))
     name_suffix = f"-{stock_name}" if stock_name else ''
+    # 清理旧文件
     for old_path in target_dir.glob(f"待验证-{payload['symbol']}*-{checkpoint_label}.*"):
         if old_path.is_file():
             old_path.unlink()
+    # 保存 md 报告
     target = target_dir / f"待验证-{payload['symbol']}{name_suffix}-{checkpoint_label}.md"
     target.write_text(render_pending_validation_markdown(payload), encoding='utf-8')
-    entry = build_checkpoint_entry(payload, checkpoint)
-    target_jsonl = target_dir / f"待验证-{payload['symbol']}{name_suffix}-{checkpoint_label}.checkpoints.jsonl"
-    append_checkpoint_jsonl(target_jsonl, entry)
-    target_validation = target_dir / f"待验证-{payload['symbol']}{name_suffix}-{checkpoint_label}.validation.json"
-    write_validation_payload(target_validation, payload, checkpoint, entry)
+    # 保存 parquet 结构化数据
+    parquet_target = target_dir / f"待验证-{payload['symbol']}{name_suffix}-{checkpoint_label}"
+    save_analysis_parquet(parquet_target, payload, mode="overwrite")
     return str(target)

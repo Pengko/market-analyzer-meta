@@ -68,7 +68,6 @@ DATA_DEFS = [
     {"name": "financial_fina_indicator", "desc": "财务数据-财务指标", "paths": [f"{FINANCIAL_BASE}/fina_indicator/*.csv", f"{FINANCIAL_BASE}/fina_indicator/*.parquet"], "type": "glob", "critical": False, "root": "financial_data_root"},
     {"name": "financial_fina_mainbz", "desc": "财务数据-主营业务构成", "paths": [f"{FINANCIAL_BASE}/fina_mainbz/*.csv", f"{FINANCIAL_BASE}/fina_mainbz/*.parquet"], "type": "glob", "critical": False, "root": "financial_data_root"},
     {"name": "financial_forecast", "desc": "财务数据-业绩预告",       "paths": [f"{FINANCIAL_BASE}/forecast/*.csv", f"{FINANCIAL_BASE}/forecast/*.parquet"], "type": "glob", "critical": False, "root": "financial_data_root"},
-    {"name": "sqlite_warehouse", "desc": "SQLite数仓",            "paths": ["/Users/penghongming/quant-data/tushare/**/*.db"], "type": "glob_recursive", "critical": False},
     {"name": "pre_collected",    "desc": "预收集数据",             "paths": [f"{STOCK_BASE}/pre_collected/**"], "type": "glob_recursive", "critical": False, "root": "stock_data_root"},
 ]
 
@@ -236,24 +235,6 @@ def scan_symbol_specific(symbol: str) -> dict:
     return results
 
 
-def check_sqlite_integrity(db_path: str) -> dict:
-    """检查 SQLite 数据库是否为空文件或损坏"""
-    try:
-        size = os.path.getsize(db_path)
-        if size == 0:
-            return {"path": db_path, "size": 0, "valid": False, "tables": [], "note": "空文件 (0 bytes)"}
-        # 尝试读取表名
-        import sqlite3
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-        tables = [row[0] for row in cursor.fetchall()]
-        conn.close()
-        return {"path": db_path, "size": size, "valid": len(tables) > 0, "tables": tables, "note": f"正常 ({len(tables)} 个表)"}
-    except Exception as e:
-        return {"path": db_path, "size": size if 'size' in dir() else -1, "valid": False, "tables": [], "note": f"错误: {e}"}
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="本地数据资产扫描")
     parser.add_argument("--symbol", default="", help="指定股票代码进行精确扫描 (如 600103.SH)")
@@ -268,13 +249,7 @@ def main() -> int:
         r = scan_one(d)
         results.append(r)
 
-    # 2. 检查 SQLite 数仓
-    sqlite_results = []
-    for db_pattern in ["/Users/penghongming/quant-data/tushare/**/*.db"]:
-        for db_path in glob.glob(db_pattern, recursive=True):
-            sqlite_results.append(check_sqlite_integrity(db_path))
-
-    # 3. 如果指定了股票，做精确扫描
+    # 2. 如果指定了股票，做精确扫描
     symbol_results = {}
     if args.symbol:
         symbol_results = scan_symbol_specific(args.symbol)
@@ -293,7 +268,6 @@ def main() -> int:
                 "critical_missing": [r["desc"] for r in results if not r["exists"] and r["critical"]],
             },
             "data_types": results,
-            "sqlite_dbs": sqlite_results,
             "symbol_specific": symbol_results if args.symbol else None,
         }
         print(json.dumps(output, ensure_ascii=False, indent=2))
@@ -327,15 +301,6 @@ def main() -> int:
     print(f"\n总计: {total} 类数据 | 可用: {available} | 缺失: {missing}")
     if critical_missing:
         print(f"\n⚠️ 严重缺失 (强制前置模块): {', '.join(critical_missing)}")
-
-    # SQLite 检查结果
-    if sqlite_results:
-        print(f"\n【SQLite 数仓检查】")
-        for db in sqlite_results:
-            valid_str = "正常" if db["valid"] else "异常"
-            print(f"  {os.path.basename(db['path'])}: {valid_str} ({db['note']}, {db['size']:,} bytes)")
-            if db["tables"]:
-                print(f"    表: {', '.join(db['tables'][:5])}{'...' if len(db['tables']) > 5 else ''}")
 
     # 精确股票扫描
     if args.symbol and symbol_results:

@@ -51,7 +51,6 @@ from capital_context import (
     summarize_capital_freshness as _summarize_capital_freshness,
     build_mixed_trade_date_context as _build_mixed_trade_date_context,
     degrade_prediction_bundle as _degrade_prediction_bundle,
-    persist_analysis_history as _persist_analysis_history,
 )
 
 from decision.decision_engine import (
@@ -106,8 +105,6 @@ from runtime.runtime_quality import (
 from zoneinfo import ZoneInfo
 
 from data.config_loader import cfg
-from data.db_adapter import init_schema as init_sqlite_schema
-from data.db_adapter import insert_analysis_history as insert_analysis_history_row
 
 
 # ── 常量 ──────────────────────────────────────────────
@@ -171,9 +168,6 @@ def build_mixed_trade_date_context(
 
 def _degrade_prediction_bundle_fn(mixed_context: dict[str, Any], payload: dict[str, Any]) -> None:
     _degrade_prediction_bundle(mixed_context, payload)
-
-def _persist_analysis_history_fn(payload: dict[str, Any]) -> dict[str, Any]:
-    return _persist_analysis_history(payload)
 
 # --- decision.decision_engine ---
 build_peer_linkage = build_peer_linkage_impl
@@ -557,7 +551,6 @@ def build_payload(
         daily_row = {"close": None}
     payload["current_price"] = safe_float(daily_row.get("close")) if daily_row else None
     payload["portfolio"] = get_position_impl(full_symbol)
-    payload["analysis_history_write"] = _persist_analysis_history_fn(payload)
 
     return payload
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import urllib.request
 import urllib.error
 from datetime import datetime
@@ -217,6 +218,55 @@ def auto_fetch_minute_via_infoway(
         }
 
 
+def _fetch_minute_via_unified_entry(
+    symbol: str, trade_date_text: str
+) -> dict[str, Any] | None:
+    """通过 fetch_minute_data.py 统一入口获取分钟线（内含腾讯 API fallback）。"""
+    fetcher_script = SCRIPT_ROOT / "fetchers" / "fetch_minute_data.py"
+    if not fetcher_script.exists():
+        return None
+    compact = trade_date_text.replace("-", "")
+    cmd = [
+        sys.executable,
+        str(fetcher_script),
+        "--symbol", symbol,
+        "--trade-date", compact,
+        "--timeout", "20",
+    ]
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        raw = proc.stdout.strip()
+        if not raw and proc.returncode != 0:
+            return {
+                "status": "fetch_failed",
+                "mode": "unified_fetcher",
+                "reason": (proc.stderr or "").strip()[:300],
+            }
+        payload = json.loads(raw)
+        if payload.get("status") == "success":
+            return {
+                "status": "success",
+                "mode": payload.get("source", "unified_fetcher"),
+                "count": payload.get("count"),
+                "filename": payload.get("filename"),
+            }
+        return {
+            "status": "fetch_failed",
+            "mode": payload.get("source", "unified_fetcher"),
+            "reason": payload.get("message", "unified_fetcher_failed"),
+        }
+    except subprocess.TimeoutExpired:
+        return {"status": "fetch_failed", "mode": "unified_fetcher", "reason": "timeout"}
+    except Exception as exc:
+        return {"status": "fetch_failed", "mode": "unified_fetcher", "reason": str(exc)[:200]}
+
+
 def auto_fetch_minute_data(
     symbol: str, trade_date_text: str, now: datetime
 ) -> dict[str, Any] | None:
@@ -226,17 +276,23 @@ def auto_fetch_minute_data(
     if existing.exists() and not force_refresh:
         return None
     
-    # TODO: Infoway WebSocket/REST 仅用于盘中实时监控，历史分钟线主源为腾讯API
-    # infoway_meta = auto_fetch_minute_via_infoway(symbol, trade_date_text)
-    # infoway_ok = infoway_meta and infoway_meta.get("status") == "success"
-    
+    # 1) 浏览器补抓（Hermes 执行层）
     browser_meta = auto_fetch_minute_via_browser(symbol, trade_date_text)
     browser_ok = browser_meta and browser_meta.get("status") == "success"
-    
+
     if browser_ok:
         result = browser_meta
     else:
-        result = browser_meta
+        # 2) 浏览器失败 → 统一入口（Eastmoney Node + 腾讯 API fallback）
+        unified_meta = _fetch_minute_via_unified_entry(symbol, trade_date_text)
+        unified_ok = unified_meta and unified_meta.get("status") == "success"
+        if unified_ok:
+            result = unified_meta
+        else:
+            # 合并两个失败原因供排查
+            result = unified_meta or browser_meta
+            if result and browser_meta and browser_meta.get("reason"):
+                result["browser_reason"] = browser_meta.get("reason")
     
     if result and force_refresh:
         result["force_refresh"] = True

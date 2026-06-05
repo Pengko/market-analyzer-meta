@@ -1011,9 +1011,20 @@ def render_markdown(report: dict) -> str:
         pullback = agent_rot.get("pullback_ready", [])
         if pullback:
             lines.append("")
-            lines.append("**回调到位板块：**")
+            lines.append("**回调到位板块（回调幅度>40%）：**")
             for p in pullback:
                 lines.append(f"- {p['name']}：{p['pullback_reason']}")
+        # 涨停回调板块
+        limit_pullback = agent_rot.get("limit_pullback", [])
+        if limit_pullback:
+            lines.append("")
+            lines.append("**涨停家数多+回调板块：**")
+            lines.append("")
+            lines.append("| 板块 | 涨停家数 | 近3日涨幅 | 龙头 |")
+            lines.append("|------|----------|----------|------|")
+            for s in limit_pullback:
+                status = "✅回调到位" if s.get("pullback_ok") else "回调中"
+                lines.append(f"| {s['name']} | {s['up_nums']}家 | {s['pct_3d']:+.1f}% | {s.get('lead_stock', '')} |")
         pred = agent_rot.get("rotation_prediction", {})
         if pred.get("prediction"):
             lines.append(f"\n- 轮动预判：{pred['prediction']}")

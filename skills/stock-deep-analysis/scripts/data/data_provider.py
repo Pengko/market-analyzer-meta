@@ -1,4 +1,14 @@
-from pathlib import Path
+"""
+简单数据读取器 —— 只管从本地 parquet 读数据，不管 API 补数据。
+
+跟 dataslicer 的区别：
+- dataslicer：本地没有就调 Tushare API 补（智能）
+- data_provider：本地没有就返回 None（简单粗暴）
+
+谁用它：
+- 决策引擎需要快速查某只股票某天的数据时用它
+- 不需要补数据的场景用它更快
+"""
 from typing import Any
 import pandas as pd
 

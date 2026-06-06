@@ -1,8 +1,14 @@
 """
-Data Layer — 交易日定位 + 数据 Slice 构建。
+数据切片器 —— 给分析提供"原材料"的地方。
 
-Phase 0: resolve_trade_date() — 定位最新交易日
-Phase 1: slice_all() — 并行构建所有 DataSlice → 分发给 Agent
+干啥的：
+1. 先确定今天是哪个交易日（可能今天不开市，得往前找）
+2. 把股票的日线、指数、板块、财务、分钟数据打包成一个个 Slice
+3. 优先读本地 parquet 文件，本地没有就调 Tushare API 补数据
+
+谁用它：
+- build_stock_report.py 调它获取数据
+- quick_analyze.py 也调它
 """
 
 from __future__ import annotations

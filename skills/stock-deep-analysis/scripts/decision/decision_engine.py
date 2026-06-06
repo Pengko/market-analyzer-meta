@@ -1,5 +1,20 @@
-#!/usr/bin/env python3
-from __future__ import annotations
+"""
+决策引擎 —— 最后拍板"买不买"的地方。
+
+干啥的：
+1. 综合所有数据（行情、资金、板块、技术指标、消息面）打分
+2. 生成最终的交易建议：买/卖/观望
+3. 记录分析结果，生成待验证报告
+
+谁用它：
+- build_stock_report.py 调它生成决策
+- quick_analyze.py 也调它
+
+核心函数：
+- build_final_decision(): 最终决策
+- build_peer_linkage(): 板块联动分析
+- persist_pending_validation(): 保存分析报告
+"""
 
 import csv
 import json

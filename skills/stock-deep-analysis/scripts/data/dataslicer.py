@@ -8,6 +8,7 @@ Phase 1: slice_all() — 并行构建所有 DataSlice → 分发给 Agent
 from __future__ import annotations
 
 import json
+import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, time as dtime
@@ -16,6 +17,11 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pandas as _pd
+
+# 确保 scripts 目录在 Python 路径中
+_scripts_dir = str(Path(__file__).parent.parent)
+if _scripts_dir not in sys.path:
+    sys.path.insert(0, _scripts_dir)
 
 # ── 路径 ──────────────────────────────────────────────
 STOCK_ROOT   = Path.home() / "quant-data" / "tushare" / "股票数据"
@@ -270,7 +276,7 @@ def _build_minute_slice(symbol: str, trade_date: str,
 
     # 大盘分钟 (Tencent API)
     try:
-        from scripts.runtime.runtime_fetch import fetch_index_minutes
+        from runtime.runtime_fetch import fetch_index_minutes
         for code in ["sh000001", "sz399001"]:
             data = fetch_index_minutes(code, f"{td[:4]}-{td[4:6]}-{td[6:8]}")
             if data:
@@ -284,7 +290,7 @@ def _build_minute_slice(symbol: str, trade_date: str,
     # 板块分钟
     if concept and concept.names and top_theme:
         try:
-            from scripts.runtime.runtime_fetch import resolve_sector_code, fetch_sector_minutes
+            from runtime.runtime_fetch import resolve_sector_code, fetch_sector_minutes
             scode = resolve_sector_code(top_theme)
             if scode:
                 data = fetch_sector_minutes(scode, f"{td[:4]}-{td[4:6]}-{td[6:8]}")
@@ -324,7 +330,7 @@ def _read_csv_minute(path: Path, trade_date: str) -> list[dict]:
 
 def _build_financial_slice(symbol: str) -> FinancialSlice:
     """构建财务数据"""
-    from scripts.data.fundamental_provider import (
+    from data.fundamental_provider import (
         get_fundamental_express, get_fundamental_income,
         get_fundamental_balancesheet, get_fundamental_cashflow,
         get_fundamental_mainbz, get_top10_holders,

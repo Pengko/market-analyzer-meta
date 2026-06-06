@@ -118,7 +118,13 @@ def _build_dc_index() -> None:
 
 def build_peer_linkage(full_symbol: str, trade_date_text: str) -> dict[str, Any]:
     """兼容旧接口: 先用 DataSlicer 拉数据, 再调纯分析函数"""
-    from scripts.data.dataslicer import slice_all
+    import sys
+    from pathlib import Path
+    # 确保 scripts 目录在 Python 路径中
+    scripts_dir = str(Path(__file__).parent.parent)
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    from data.dataslicer import slice_all
     slices = slice_all(full_symbol, trade_date_text.replace("-", ""))
     return analyze_peer(slices["market"], slices["concept"])
 
@@ -128,7 +134,13 @@ def analyze_peer(market: Any, concept: Any) -> dict[str, Any]:
     
     不拉取任何数据, 所有数据由上游 DataSlicer 提供。
     """
-    from scripts.data.dataslicer import MarketSlice, ConceptSlice as CSlice
+    import sys
+    from pathlib import Path
+    # 确保 scripts 目录在 Python 路径中
+    scripts_dir = str(Path(__file__).parent.parent)
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    from data.dataslicer import MarketSlice, ConceptSlice as CSlice
     import math
     import statistics as _stat
     

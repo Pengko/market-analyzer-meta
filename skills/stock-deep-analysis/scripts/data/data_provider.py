@@ -1,13 +1,17 @@
 """
-简单数据读取器 —— 只管从本地 parquet 读数据，不管 API 补数据。
+本地数据路径聚合层 —— 所有本地 parquet 读取都走这里。
 
-跟 dataslicer 的区别：
-- dataslicer：本地没有就调 Tushare API 补（智能）
-- data_provider：本地没有就返回 None（简单粗暴）
+职责：
+1. 统一管理本地数据路径（daily、daily_basic、index_daily、cyq_perf 等）
+2. 提供简单的 get_xxx(symbol, trade_date) 接口
+3. 不管 API 补数据，本地没有就返回 None
+
+跟 data_access.py 的区别：
+- data_provider：只读本地，简单快速
+- data_access.py：本地没有会调 Tushare API 补数据
 
 谁用它：
-- 决策引擎需要快速查某只股票某天的数据时用它
-- 不需要补数据的场景用它更快
+- 需要快速查本地数据的场景
 """
 from typing import Any
 import pandas as pd

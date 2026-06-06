@@ -200,3 +200,64 @@ def load_all_analyses(
         combined = combined[combined["trade_date"] <= end_date]
     
     return combined
+
+
+def load_latest_report(
+    base_dir: Path,
+    symbol: str,
+    current_trade_date: str,
+    checkpoint: str = "close",
+) -> dict[str, Any] | None:
+    """
+    查询同一只股票最新的盘后分析报告（排除当前分析日期）
+    
+    同时搜索 pending-validations 和 validations 目录
+    
+    Args:
+        base_dir: 报告根目录（pending-validations）
+        symbol: 股票代码
+        current_trade_date: 当前分析日期，排除此日期
+        checkpoint: 只对比盘后报告
+    
+    Returns:
+        最新报告的扁平化数据，如果没有则返回 None
+    """
+    # 同时搜索 pending-validations 和 validations 目录
+    search_dirs = [base_dir]
+    validations_dir = base_dir.parent / "validations"
+    if validations_dir.exists():
+        search_dirs.append(validations_dir)
+    
+    required_columns = {"symbol", "checkpoint", "trade_date"}
+    all_dfs: list[pd.DataFrame] = []
+    
+    for search_dir in search_dirs:
+        for parquet_file in search_dir.rglob("*.parquet"):
+            try:
+                df = pq.read_table(parquet_file).to_pandas()
+                # 检查必需的列是否存在
+                if not required_columns.issubset(df.columns):
+                    continue
+                all_dfs.append(df)
+            except Exception:
+                continue
+    
+    if not all_dfs:
+        return None
+    
+    combined = pd.concat(all_dfs, ignore_index=True)
+    
+    # 筛选条件：同股票、盘后报告、排除当前日期
+    filtered = combined[
+        (combined["symbol"] == symbol) &
+        (combined["checkpoint"] == checkpoint) &
+        (combined["trade_date"] != current_trade_date)
+    ]
+    
+    if filtered.empty:
+        return None
+    
+    # 按日期降序，取最新的一条
+    latest = filtered.sort_values("trade_date", ascending=False).iloc[0]
+    
+    return latest.to_dict()

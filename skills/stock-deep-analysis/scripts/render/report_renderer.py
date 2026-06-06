@@ -799,4 +799,43 @@ def render_markdown(payload: dict) -> str:
             lines.append(f'- {item}')
     else:
         lines.append('- 当前未见额外降级风险。')
+    
+    # 历史对比模块
+    history_comparison = payload.get("history_comparison", {})
+    if history_comparison.get("status") == "available":
+        lines.extend([
+            '',
+            '---',
+            '',
+            '## 七、历史对比',
+            '',
+            f'- 上次分析日期：{history_comparison.get("previous_date")}',
+        ])
+        changes = history_comparison.get("changes", {})
+        if "price" in changes:
+            price_info = changes["price"]
+            direction = "↑" if price_info["change"] > 0 else "↓" if price_info["change"] < 0 else "→"
+            lines.append(f'- 价格变化：{price_info["previous"]:.2f} → {price_info["current"]:.2f} ({direction} {price_info["change"]:+.2f}, {price_info["change_pct"]:+.2f}%)')
+        if "decision" in changes:
+            decision_info = changes["decision"]
+            if decision_info["changed"]:
+                lines.append(f'- 决策变化：{decision_info["previous"]} → {decision_info["current"]}')
+            else:
+                lines.append(f'- 决策一致：{decision_info["current"]}')
+        if "winner_rate" in changes:
+            wr_info = changes["winner_rate"]
+            lines.append(f'- 获利盘变化：{wr_info["previous"]:.1f}% → {wr_info["current"]:.1f}% ({wr_info["change"]:+.2f}%)')
+        if "atr14" in changes:
+            atr_info = changes["atr14"]
+            lines.append(f'- 波动率变化：{atr_info["previous"]:.2f} → {atr_info["current"]:.2f} ({atr_info["change"]:+.2f})')
+    elif history_comparison.get("status") == "no_history":
+        lines.extend([
+            '',
+            '---',
+            '',
+            '## 七、历史对比',
+            '',
+            '- 首次分析该股票，无历史对比数据',
+        ])
+    
     return '\n'.join(lines)

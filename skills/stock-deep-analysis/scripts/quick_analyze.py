@@ -464,7 +464,7 @@ def fetch_local_news(ts_code: str, trade_date: str) -> dict:
     code_for_filename = ts_code.replace(".SH", "").replace(".SZ", "")
 
     # 尝试读取已归一化的 news_pipeline 文件
-    news_root = Path(cfg.paths("news_data_root")) if cfg.paths("news_data_root") else Path("/Users/penghongming/quant-data/tushare/消息面数据")
+    news_root = Path(cfg.paths("news_data_root"))
     pipeline_path = news_root / "raw" / "news_pipeline" / yyyy / mm / dd / f"news_pipeline_{code_for_filename}_{date_iso}.json"
 
     raw = {}

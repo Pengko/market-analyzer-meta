@@ -1,13 +1,13 @@
 """
-财务数据读取器 —— 专门读财报、业绩快报、财务指标。
+财务数据读取器 —— 专门读财报相关数据。
 
-数据源：
-- ~/quant-data/tushare/财务数据/ 下的 parquet 文件
-- express（业绩快报）、fina_indicator（财务指标）、income（利润表）等
+职责：
+1. 从本地 parquet 读取：业绩快报、财务指标、利润表、资产负债表、现金流
+2. 支持按股票代码查询历史财务数据
 
 谁用它：
 - build_stock_report.py 调它获取财务数据
-- 用于判断公司基本面好不好
+- 用于判断公司基本面
 """
 
 from __future__ import annotations

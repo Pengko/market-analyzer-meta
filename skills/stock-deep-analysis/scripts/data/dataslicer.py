@@ -1,14 +1,13 @@
 """
-数据切片器 —— 给分析提供"原材料"的地方。
+数据切片构建器 —— 给分析流水线打包数据的。
 
-干啥的：
-1. 先确定今天是哪个交易日（可能今天不开市，得往前找）
-2. 把股票的日线、指数、板块、财务、分钟数据打包成一个个 Slice
-3. 优先读本地 parquet 文件，本地没有就调 Tushare API 补数据
+职责：
+1. 确定当前交易日（不开市就往前找）
+2. 把日线、指数、板块、财务、分钟数据打包成 Slice 对象
+3. 本地优先，没有就调 Tushare API 补
 
 谁用它：
-- build_stock_report.py 调它获取数据
-- quick_analyze.py 也调它
+- build_stock_report.py 和 quick_analyze.py 调它
 """
 
 from __future__ import annotations

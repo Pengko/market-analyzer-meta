@@ -1,17 +1,14 @@
 """
-统一数据入口 —— 整个系统的"数据总管"。
+统一数据入口 —— 所有数据查询都走这里。
 
-干啥的：
+职责：
 1. 读本地 parquet/CSV 文件（优先）
-2. 本地没有 → 调 Tushare Pro API 补数据
-3. 提供各种数据查询接口：日线、财务、资金流、龙虎榜、消息面...
+2. 本地没有 → 调 Tushare API 补数据
+3. 提供查询接口：日线、财务、资金流、龙虎榜、消息面...
 
 谁用它：
-- 几乎所有模块都用它：decision_engine, sector_analyzer, trend_analyzer...
-- 它是唯一应该调 Tushare API 的地方
-
-路径统一：
-- 所有数据路径都从 common.py 导入，不硬编码
+- 几乎所有模块：decision_engine, sector_analyzer, trend_analyzer...
+- 它是唯一调 Tushare API 的地方
 """
 
 import csv

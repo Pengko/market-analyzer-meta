@@ -24,7 +24,6 @@ from pathlib import Path
 from typing import Any, Optional
 
 from data.config_loader import cfg
-from data.db_adapter import get_conn, init_schema
 
 SCRIPT_DIR = Path(__file__).parent
 SKILL_DIR = SCRIPT_DIR.parent
@@ -579,210 +578,21 @@ def archive_validated_pending(report: dict[str, Any]) -> list[Path]:
         symbol = item.get("symbol")
         if not symbol:
             continue
+        # 归档 md 文件
         pending_md_candidates = sorted(pending_date_dir.glob(f"待验证-{symbol}*.md"))
-        pending_jsonl_candidates = sorted(
-            pending_date_dir.glob(f"待验证-{symbol}*.checkpoints.jsonl")
-        )
         for pending_md in pending_md_candidates:
             suffix = pending_md.name.removeprefix(f"待验证-{symbol}")
             validated_md = validated_date_dir / f"已验证-{symbol}{suffix}"
             shutil.move(str(pending_md), str(validated_md))
             archived.append(validated_md)
-        for pending_jsonl in pending_jsonl_candidates:
-            suffix = pending_jsonl.name.removeprefix(f"待验证-{symbol}")
-            validated_jsonl = validated_date_dir / f"已验证-{symbol}{suffix}"
-            shutil.move(str(pending_jsonl), str(validated_jsonl))
-            archived.append(validated_jsonl)
+        # 归档 parquet 文件
+        pending_parquet_candidates = sorted(pending_date_dir.glob(f"待验证-{symbol}*.parquet"))
+        for pending_parquet in pending_parquet_candidates:
+            suffix = pending_parquet.name.removeprefix(f"待验证-{symbol}")
+            validated_parquet = validated_date_dir / f"已验证-{symbol}{suffix}"
+            shutil.move(str(pending_parquet), str(validated_parquet))
+            archived.append(validated_parquet)
     return archived
-
-
-def persist_validation_results(report: dict[str, Any]) -> dict[str, int]:
-    """
-    Upsert validation checkpoints into SQLite `validation_results`.
-    Dedup key: (symbol, trade_date, checkpoint).
-    """
-    init_schema()
-    now_text = datetime.now().isoformat(timespec="seconds")
-    inserted = 0
-    updated = 0
-    skipped = 0
-
-    with get_conn() as conn:
-        for item in report.get("validations") or []:
-            symbol = str(item.get("symbol") or "").strip()
-            trade_date = str(item.get("target_date") or "").strip()
-            if not symbol or not trade_date:
-                skipped += 1
-                continue
-
-            # Try to link to latest analysis_history row for same symbol+trade_date.
-            row = conn.execute(
-                """
-                SELECT id
-                FROM analysis_history
-                WHERE symbol = ? AND trade_date = ?
-                ORDER BY id DESC
-                LIMIT 1
-                """,
-                (symbol, trade_date),
-            ).fetchone()
-            analysis_history_id = int(row[0]) if row else None
-
-            wrote_any = False
-            for checkpoint_key, ckpt_result in (
-                ("t1", item.get("t1_result")),
-                ("t2", item.get("t2_result")),
-            ):
-                if not ckpt_result:
-                    continue
-                wrote_any = True
-
-                exact_hit = bool(ckpt_result.get("exact_hit"))
-                direction_hit = bool(ckpt_result.get("direction_hit"))
-                if exact_hit:
-                    verdict = "exact_hit"
-                    score = 100.0
-                elif direction_hit:
-                    verdict = "direction_hit"
-                    score = 60.0
-                else:
-                    verdict = "miss"
-                    score = 0.0
-
-                details = {
-                    "symbol": symbol,
-                    "target_date": trade_date,
-                    "checkpoint": checkpoint_key,
-                    "prediction": item.get(f"{checkpoint_key}_prediction"),
-                    "result": ckpt_result,
-                    "hits": item.get("hits") or {},
-                    "source_file": item.get("file"),
-                }
-                details_json = json.dumps(details, ensure_ascii=False)
-
-                existing = conn.execute(
-                    """
-                    SELECT id
-                    FROM validation_results
-                    WHERE symbol = ? AND trade_date = ? AND checkpoint = ?
-                    ORDER BY id DESC
-                    LIMIT 1
-                    """,
-                    (symbol, trade_date, checkpoint_key),
-                ).fetchone()
-
-                if existing:
-                    conn.execute(
-                        """
-                        UPDATE validation_results
-                        SET analysis_history_id = ?,
-                            verdict = ?,
-                            score = ?,
-                            details_json = ?,
-                            created_at = ?
-                        WHERE id = ?
-                        """,
-                        (
-                            analysis_history_id,
-                            verdict,
-                            score,
-                            details_json,
-                            now_text,
-                            int(existing[0]),
-                        ),
-                    )
-                    updated += 1
-                else:
-                    conn.execute(
-                        """
-                        INSERT INTO validation_results
-                          (analysis_history_id, symbol, trade_date, checkpoint, verdict, score, details_json, created_at)
-                        VALUES
-                          (?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            analysis_history_id,
-                            symbol,
-                            trade_date,
-                            checkpoint_key,
-                            verdict,
-                            score,
-                            details_json,
-                            now_text,
-                        ),
-                    )
-                    inserted += 1
-
-            # If T+1/T+2 actuals are not available yet, still persist a pending row
-            # so `validation_results` is not an empty table.
-            if not wrote_any:
-                checkpoint_key = "validation"
-                verdict = "pending"
-                score = None
-                details = {
-                    "symbol": symbol,
-                    "target_date": trade_date,
-                    "checkpoint": checkpoint_key,
-                    "pending_reason": "t1_t2_actuals_not_ready",
-                    "prediction_t1": item.get("t1_prediction"),
-                    "prediction_t2": item.get("t2_prediction"),
-                    "source_file": item.get("file"),
-                }
-                details_json = json.dumps(details, ensure_ascii=False)
-                existing = conn.execute(
-                    """
-                    SELECT id
-                    FROM validation_results
-                    WHERE symbol = ? AND trade_date = ? AND checkpoint = ?
-                    ORDER BY id DESC
-                    LIMIT 1
-                    """,
-                    (symbol, trade_date, checkpoint_key),
-                ).fetchone()
-                if existing:
-                    conn.execute(
-                        """
-                        UPDATE validation_results
-                        SET analysis_history_id = ?,
-                            verdict = ?,
-                            score = ?,
-                            details_json = ?,
-                            created_at = ?
-                        WHERE id = ?
-                        """,
-                        (
-                            analysis_history_id,
-                            verdict,
-                            score,
-                            details_json,
-                            now_text,
-                            int(existing[0]),
-                        ),
-                    )
-                    updated += 1
-                else:
-                    conn.execute(
-                        """
-                        INSERT INTO validation_results
-                          (analysis_history_id, symbol, trade_date, checkpoint, verdict, score, details_json, created_at)
-                        VALUES
-                          (?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            analysis_history_id,
-                            symbol,
-                            trade_date,
-                            checkpoint_key,
-                            verdict,
-                            score,
-                            details_json,
-                            now_text,
-                        ),
-                    )
-                    inserted += 1
-        conn.commit()
-
-    return {"inserted": inserted, "updated": updated, "skipped": skipped}
 
 
 def main() -> None:
@@ -810,17 +620,9 @@ def main() -> None:
     else:
         print(render_text(report))
 
-    persist_stats = persist_validation_results(report)
-
     output_file = save_validation_report(report)
     archived_files = archive_validated_pending(report)
     print(f"\n报告已保存至：{output_file}")
-    print(
-        "validation_results 写入："
-        f"inserted={persist_stats['inserted']} "
-        f"updated={persist_stats['updated']} "
-        f"skipped={persist_stats['skipped']}"
-    )
     if archived_files:
         print("已归档待验证记录：")
         for path in archived_files:

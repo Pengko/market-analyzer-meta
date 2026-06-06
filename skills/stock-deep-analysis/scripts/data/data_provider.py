@@ -1,9 +1,25 @@
-from pathlib import Path
+"""
+本地数据路径聚合层 —— 所有本地 parquet 读取都走这里。
+
+职责：
+1. 统一管理本地数据路径（daily、daily_basic、index_daily、cyq_perf 等）
+2. 提供简单的 get_xxx(symbol, trade_date) 接口
+3. 不管 API 补数据，本地没有就返回 None
+
+跟 data_access.py 的区别：
+- data_provider：只读本地，简单快速
+- data_access.py：本地没有会调 Tushare API 补数据
+
+谁用它：
+- 需要快速查本地数据的场景
+"""
 from typing import Any
 import pandas as pd
 
-_STOCK_ROOT = Path("/Users/penghongming/quant-data/tushare/股票数据")
-_INDEX_ROOT = Path("/Users/penghongming/quant-data/tushare/指数数据")
+from common import STOCK_DATA_ROOT, INDEX_DATA_ROOT
+
+_STOCK_ROOT = STOCK_DATA_ROOT
+_INDEX_ROOT = INDEX_DATA_ROOT
 
 
 def _read_one(path: Path) -> pd.DataFrame | None:

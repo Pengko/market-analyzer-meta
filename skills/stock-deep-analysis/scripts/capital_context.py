@@ -7,7 +7,6 @@ from datetime import datetime
 from typing import Any
 
 from data.config_loader import cfg
-from data.db_adapter import init_schema, insert_analysis_history
 from time_util import normalize_trade_date_text
 
 
@@ -244,33 +243,3 @@ def degrade_prediction_bundle(mixed_context: dict[str, Any], payload: dict[str, 
         "key_levels": {"observe": None, "confirm": None, "invalid": None},
         "news_supporting_sources": [],
     }
-
-
-def persist_analysis_history(payload: dict[str, Any]) -> dict[str, Any]:
-    try:
-        final_decision = payload.get("final_decision") or {}
-        final_summary = str(
-            final_decision.get("decision")
-            or final_decision.get("reason")
-            or ""
-        ).strip()
-        checkpoint = str(payload.get("checkpoint") or "").strip() or "unknown"
-        created_at = str(
-            payload.get("analysis_time")
-            or datetime.now().isoformat(timespec="seconds")
-        )
-        init_schema()
-        row_id = insert_analysis_history(
-            {
-                "symbol": str(payload.get("symbol") or ""),
-                "trade_date": str(payload.get("trade_date") or ""),
-                "checkpoint": checkpoint,
-                "final_decision_summary": final_summary,
-                "payload": payload,
-                "status": "ok",
-                "created_at": created_at,
-            }
-        )
-        return {"status": "written", "analysis_history_id": row_id}
-    except Exception as exc:
-        return {"status": "write_failed", "reason": str(exc)}

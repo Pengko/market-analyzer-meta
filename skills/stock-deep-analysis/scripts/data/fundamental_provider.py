@@ -1,7 +1,13 @@
 """
-财务数据 parquet 读取层。
+财务数据读取器 —— 专门读财报相关数据。
 
-数据源: ~/quant-data/tushare/财务数据/ 和 股票数据/top10_*
+职责：
+1. 从本地 parquet 读取：业绩快报、财务指标、利润表、资产负债表、现金流
+2. 支持按股票代码查询历史财务数据
+
+谁用它：
+- build_stock_report.py 调它获取财务数据
+- 用于判断公司基本面
 """
 
 from __future__ import annotations
@@ -11,8 +17,10 @@ from typing import Any
 
 import pandas as pd
 
-FINANCIAL_ROOT = Path.home() / "quant-data" / "tushare" / "财务数据"
-STOCK_ROOT = Path.home() / "quant-data" / "tushare" / "股票数据"
+from common import FINANCIAL_DATA_ROOT, STOCK_DATA_ROOT
+
+FINANCIAL_ROOT = FINANCIAL_DATA_ROOT
+STOCK_ROOT = STOCK_DATA_ROOT
 
 
 def _read_parquet(path: Path) -> list[dict]:

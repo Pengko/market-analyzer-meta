@@ -24,8 +24,6 @@ paths:
 
   # 个人持仓配置
   portfolio: "~/agent-skills/custom/stock-deep-analysis/references/portfolio/portfolio.yaml"
-  # SQLite 数仓文件（统一配置真值）
-  sqlite_db: "~/agent-skills/custom/stock-deep-analysis/references/data/stock_analytics.db"
 
   # 测试对象池
   test_pool: "~/agent-skills/custom/stock-deep-analysis/references/test-pools/测试对象池.md"

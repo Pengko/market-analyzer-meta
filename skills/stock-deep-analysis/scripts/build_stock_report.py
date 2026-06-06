@@ -19,6 +19,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable
 
+from data.parquet_io import load_latest_report
+
 from common import STOCK_DATA_ROOT, normalize_symbol, normalize_trade_date
 from data.data_access import (
     load_daily_basic_row as load_daily_basic_row_impl,
@@ -51,7 +53,6 @@ from capital_context import (
     summarize_capital_freshness as _summarize_capital_freshness,
     build_mixed_trade_date_context as _build_mixed_trade_date_context,
     degrade_prediction_bundle as _degrade_prediction_bundle,
-    persist_analysis_history as _persist_analysis_history,
 )
 
 from decision.decision_engine import (
@@ -106,8 +107,6 @@ from runtime.runtime_quality import (
 from zoneinfo import ZoneInfo
 
 from data.config_loader import cfg
-from data.db_adapter import init_schema as init_sqlite_schema
-from data.db_adapter import insert_analysis_history as insert_analysis_history_row
 
 
 # ── 常量 ──────────────────────────────────────────────
@@ -171,9 +170,6 @@ def build_mixed_trade_date_context(
 
 def _degrade_prediction_bundle_fn(mixed_context: dict[str, Any], payload: dict[str, Any]) -> None:
     _degrade_prediction_bundle(mixed_context, payload)
-
-def _persist_analysis_history_fn(payload: dict[str, Any]) -> dict[str, Any]:
-    return _persist_analysis_history(payload)
 
 # --- decision.decision_engine ---
 build_peer_linkage = build_peer_linkage_impl
@@ -398,6 +394,86 @@ def _phase2_parallel(
 
 
 # ═══════════════════════════════════════════════════════
+# 历史对比
+# ═══════════════════════════════════════════════════════
+
+def build_history_comparison(payload: dict) -> dict[str, Any]:
+    """
+    生成历史对比数据
+    
+    对比当前分析与同股票最新的盘后报告，展示关键指标变化
+    """
+    from data.config_loader import cfg
+    
+    symbol = payload.get("symbol")
+    trade_date = payload.get("trade_date")
+    pending_dir = Path(cfg.paths("report_output"))
+    
+    if not symbol or not trade_date:
+        return {"status": "missing_info"}
+    
+    latest = load_latest_report(pending_dir, symbol, trade_date)
+    
+    if not latest:
+        return {"status": "no_history"}
+    
+    # 对比关键指标
+    comparison = {
+        "status": "available",
+        "previous_date": latest.get("trade_date"),
+        "previous_checkpoint": latest.get("checkpoint"),
+        "changes": {},
+    }
+    
+    # 价格变化
+    current_price = payload.get("current_price")
+    previous_price = latest.get("current_price")
+    if current_price is not None and previous_price is not None:
+        price_change = current_price - previous_price
+        price_change_pct = (price_change / previous_price) * 100
+        comparison["changes"]["price"] = {
+            "current": current_price,
+            "previous": previous_price,
+            "change": round(price_change, 2),
+            "change_pct": round(price_change_pct, 2),
+        }
+    
+    # 决策变化
+    current_decision = payload.get("final_decision", {}).get("decision")
+    previous_decision = latest.get("decision")
+    if current_decision is not None and previous_decision is not None:
+        comparison["changes"]["decision"] = {
+            "current": current_decision,
+            "previous": previous_decision,
+            "changed": current_decision != previous_decision,
+        }
+    
+    # 筹码变化
+    current_chip = payload.get("chip_structure") or {}
+    previous_winner_rate = latest.get("winner_rate")
+    current_winner_rate = current_chip.get("winner_rate")
+    if current_winner_rate is not None and previous_winner_rate is not None:
+        comparison["changes"]["winner_rate"] = {
+            "current": current_winner_rate,
+            "previous": previous_winner_rate,
+            "change": round(current_winner_rate - previous_winner_rate, 4),
+        }
+    
+    # 波动率变化
+    current_vol = payload.get("volatility_context") or {}
+    previous_atr = latest.get("atr14")
+    current_atr = current_vol.get("atr14")
+    if current_atr is not None and previous_atr is not None:
+        comparison["changes"]["atr14"] = {
+            "current": current_atr,
+            "previous": previous_atr,
+            "change": round(current_atr - previous_atr, 2),
+        }
+    
+    return comparison
+
+
+# ═══════════════════════════════════════════════════════
 # 核心编排
 # ═══════════════════════════════════════════════════════
 
@@ -557,7 +633,9 @@ def build_payload(
         daily_row = {"close": None}
     payload["current_price"] = safe_float(daily_row.get("close")) if daily_row else None
     payload["portfolio"] = get_position_impl(full_symbol)
-    payload["analysis_history_write"] = _persist_analysis_history_fn(payload)
+    
+    # 历史对比
+    payload["history_comparison"] = build_history_comparison(payload)
 
     return payload
 

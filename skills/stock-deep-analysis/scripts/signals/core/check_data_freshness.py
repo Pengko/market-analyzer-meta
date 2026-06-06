@@ -438,60 +438,6 @@ def csv_info(path: Path, target_date: datetime.date, max_lag_days: int) -> dict:
     }
 
 
-def sqlite_info(full_symbol: str, target_date: datetime.date) -> dict:
-    """Check SQLite warehouse freshness for the given symbol."""
-    db_path = Path(__file__).resolve().parents[3] / "references" / "data" / "stock_analytics.db"
-    if not db_path.exists():
-        return {"path": str(db_path), "status": "missing", "latest_trade_date": None, "tables": {}}
-
-    import sqlite3
-
-    tables = {
-        "daily_ohlcv": "trade_date",
-        "daily_basic": "trade_date",
-        "stk_factor_pro": "trade_date",
-    }
-    result: dict[str, dict] = {}
-    overall_latest: datetime.date | None = None
-
-    try:
-        conn = sqlite3.connect(str(db_path))
-        cur = conn.cursor()
-        for table, date_col in tables.items():
-            try:
-                cur.execute(
-                    f"SELECT MAX({date_col}) FROM {table} WHERE ts_code = ?",
-                    (full_symbol,),
-                )
-                row = cur.fetchone()
-                raw_date = row[0] if row else None
-                if raw_date:
-                    if isinstance(raw_date, str):
-                        latest = datetime.strptime(raw_date, "%Y%m%d").date()
-                    else:
-                        latest = datetime.strptime(str(raw_date), "%Y%m%d").date()
-                else:
-                    latest = None
-                result[table] = {
-                    "latest_trade_date": latest.isoformat() if latest else None,
-                    "status": infer_status(latest, target_date, 1),
-                }
-                if latest and (overall_latest is None or latest > overall_latest):
-                    overall_latest = latest
-            except Exception:
-                result[table] = {"latest_trade_date": None, "status": "invalid"}
-        conn.close()
-    except Exception:
-        return {"path": str(db_path), "status": "invalid", "latest_trade_date": None, "tables": {}}
-
-    return {
-        "path": str(db_path),
-        "status": infer_status(overall_latest, target_date, 1),
-        "latest_trade_date": overall_latest.isoformat() if overall_latest else None,
-        "tables": result,
-    }
-
-
 def build_report(full_symbol: str, pure_symbol: str, trade_date_text: str) -> dict:
     target_date = parse_trade_date(trade_date_text)
 
@@ -510,7 +456,6 @@ def build_report(full_symbol: str, pure_symbol: str, trade_date_text: str) -> di
         "cyq_perf": csv_info_from_root(ROOT / "cyq_perf", f"cyq_perf_{full_symbol}.csv", target_date, 7),
         "cyq_chips": csv_info_from_root(ROOT / "cyq_chips", f"cyq_chips_{full_symbol}.csv", target_date, 7),
         "stk_factor_pro": csv_info_from_root(ROOT / "stk_factor_pro", f"stk_factor_pro_{full_symbol}.csv", target_date, 3),
-        "sqlite_warehouse": sqlite_info(full_symbol, target_date),
     }
 
     summary = {

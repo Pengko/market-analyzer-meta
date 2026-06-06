@@ -21,6 +21,7 @@ STOCK_DATA_ROOT = cfg.paths("stock_data_root")
 NEWS_DATA_ROOT = cfg.paths("news_data_root")
 INDEX_DATA_ROOT = cfg.paths("index_data_root")
 FINANCIAL_DATA_ROOT = cfg.paths("financial_data_root")
+THEME_DATA_ROOT = STOCK_DATA_ROOT / "theme_data"
 MINUTE_DATA_ROOT = cfg.paths("minute")
 DEFAULT_MOBILE_STOCK_APP_PACKAGE = cfg.mobile("stock_app_package", default="com.hexin.plat.android")
 

@@ -1,13 +1,19 @@
 """
-Data Layer — 交易日定位 + 数据 Slice 构建。
+数据切片构建器 —— 给分析流水线打包数据的。
 
-Phase 0: resolve_trade_date() — 定位最新交易日
-Phase 1: slice_all() — 并行构建所有 DataSlice → 分发给 Agent
+职责：
+1. 确定当前交易日（不开市就往前找）
+2. 把日线、指数、板块、财务、分钟数据打包成 Slice 对象
+3. 本地优先，没有就调 Tushare API 补
+
+谁用它：
+- build_stock_report.py 和 quick_analyze.py 调它
 """
 
 from __future__ import annotations
 
 import json
+import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, time as dtime
@@ -17,11 +23,18 @@ from zoneinfo import ZoneInfo
 
 import pandas as _pd
 
+# 确保 scripts 目录在 Python 路径中
+_scripts_dir = str(Path(__file__).parent.parent)
+if _scripts_dir not in sys.path:
+    sys.path.insert(0, _scripts_dir)
+
 # ── 路径 ──────────────────────────────────────────────
-STOCK_ROOT   = Path.home() / "quant-data" / "tushare" / "股票数据"
-INDEX_ROOT   = Path.home() / "quant-data" / "tushare" / "指数数据"
-THEME_ROOT   = Path.home() / "quant-data" / "tushare" / "股票数据" / "theme_data"
-TRADE_CAL    = STOCK_ROOT / "trade_cal" / "trade_cal_all.csv"
+from common import STOCK_DATA_ROOT, INDEX_DATA_ROOT, THEME_DATA_ROOT
+
+STOCK_ROOT = STOCK_DATA_ROOT
+INDEX_ROOT = INDEX_DATA_ROOT
+THEME_ROOT = THEME_DATA_ROOT
+TRADE_CAL  = STOCK_ROOT / "trade_cal" / "trade_cal_all.csv"
 DC_INDEX_CACHE = Path("/tmp/stock_deep_dc_index.json")
 
 
@@ -270,7 +283,7 @@ def _build_minute_slice(symbol: str, trade_date: str,
 
     # 大盘分钟 (Tencent API)
     try:
-        from scripts.runtime.runtime_fetch import fetch_index_minutes
+        from runtime.runtime_fetch import fetch_index_minutes
         for code in ["sh000001", "sz399001"]:
             data = fetch_index_minutes(code, f"{td[:4]}-{td[4:6]}-{td[6:8]}")
             if data:
@@ -284,7 +297,7 @@ def _build_minute_slice(symbol: str, trade_date: str,
     # 板块分钟
     if concept and concept.names and top_theme:
         try:
-            from scripts.runtime.runtime_fetch import resolve_sector_code, fetch_sector_minutes
+            from runtime.runtime_fetch import resolve_sector_code, fetch_sector_minutes
             scode = resolve_sector_code(top_theme)
             if scode:
                 data = fetch_sector_minutes(scode, f"{td[:4]}-{td[4:6]}-{td[6:8]}")
@@ -324,7 +337,7 @@ def _read_csv_minute(path: Path, trade_date: str) -> list[dict]:
 
 def _build_financial_slice(symbol: str) -> FinancialSlice:
     """构建财务数据"""
-    from scripts.data.fundamental_provider import (
+    from data.fundamental_provider import (
         get_fundamental_express, get_fundamental_income,
         get_fundamental_balancesheet, get_fundamental_cashflow,
         get_fundamental_mainbz, get_top10_holders,

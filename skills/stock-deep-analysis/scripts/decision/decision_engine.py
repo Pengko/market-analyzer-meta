@@ -1,5 +1,14 @@
-#!/usr/bin/env python3
-from __future__ import annotations
+"""
+决策引擎 —— 综合所有数据做最终交易决策。
+
+职责：
+1. 综合行情、资金、板块、技术指标、消息面打分
+2. 生成最终交易建议：买/卖/观望
+3. 记录分析结果，生成待验证报告
+
+谁用它：
+- build_stock_report.py 和 quick_analyze.py 调它
+"""
 
 import csv
 import json
@@ -10,6 +19,7 @@ from zoneinfo import ZoneInfo
 
 from common import STOCK_DATA_ROOT
 from data.data_access import load_daily_row, load_daily_rows_for_symbols, next_trade_dates_compact
+from data.parquet_io import save_analysis_parquet
 from render.report_renderer import (
     render_pending_validation_markdown,
     render_status_text,
@@ -73,7 +83,7 @@ def _build_dc_index() -> None:
     import json as _json
     from pathlib import Path as _Path
 
-    theme_root = _Path("/Users/penghongming/quant-data/tushare/股票数据/theme_data")
+    theme_root = STOCK_DATA_ROOT / "theme_data"
 
     # BK code → concept name (仅概念板块)
     c2n: dict[str, str] = {}
@@ -117,7 +127,13 @@ def _build_dc_index() -> None:
 
 def build_peer_linkage(full_symbol: str, trade_date_text: str) -> dict[str, Any]:
     """兼容旧接口: 先用 DataSlicer 拉数据, 再调纯分析函数"""
-    from scripts.data.dataslicer import slice_all
+    import sys
+    from pathlib import Path
+    # 确保 scripts 目录在 Python 路径中
+    scripts_dir = str(Path(__file__).parent.parent)
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    from data.dataslicer import slice_all
     slices = slice_all(full_symbol, trade_date_text.replace("-", ""))
     return analyze_peer(slices["market"], slices["concept"])
 
@@ -127,7 +143,13 @@ def analyze_peer(market: Any, concept: Any) -> dict[str, Any]:
     
     不拉取任何数据, 所有数据由上游 DataSlicer 提供。
     """
-    from scripts.data.dataslicer import MarketSlice, ConceptSlice as CSlice
+    import sys
+    from pathlib import Path
+    # 确保 scripts 目录在 Python 路径中
+    scripts_dir = str(Path(__file__).parent.parent)
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    from data.dataslicer import MarketSlice, ConceptSlice as CSlice
     import math
     import statistics as _stat
     
@@ -185,7 +207,7 @@ def analyze_peer(market: Any, concept: Any) -> dict[str, Any]:
     primary_sector = primary["name"]
 
     # ── 5. 在 primary_sector 成分股中, 按个股相关性选出对标股 ──
-    daily_root = Path("/Users/penghongming/quant-data/tushare/股票数据/daily")
+    daily_root = STOCK_DATA_ROOT / "daily"
     peer_codes = c2s.get(primary.get("bk_code", ""), [])
     peer_candidates: list[dict] = []
     target_pct_arr = target_pcts
@@ -699,40 +721,12 @@ def append_checkpoint_markdown(target: Path, entry: dict[str, Any]) -> None:
         f.write('\n'.join(lines) + '\n')
 
 
-def append_checkpoint_jsonl(target_jsonl: Path, entry: dict[str, Any]) -> None:
-    target_jsonl.write_text(json.dumps(entry, ensure_ascii=False, indent=2), encoding='utf-8')
-
-
 def sanitize_report_name(name: str | None) -> str:
     text = str(name or '').strip()
     if not text:
         return ''
     text = text.replace('/', '_').replace('\\', '_')
     return text
-
-
-def write_validation_payload(target_validation: Path, payload: dict, checkpoint: str, entry: dict[str, Any]) -> None:
-    tracking = payload.get('validation_tracking') or {}
-    content = {
-        'symbol': payload.get('symbol'),
-        'trade_date': payload.get('trade_date'),
-        'analysis_time': payload.get('analysis_time'),
-        'checkpoint': checkpoint,
-        'record_status': tracking.get('record_status'),
-        'is_latest_trade_date': tracking.get('is_latest_trade_date'),
-        'should_force_pending_by_time': tracking.get('should_force_pending_by_time'),
-        'pending_guard_reason': tracking.get('pending_guard_reason'),
-        't_plus_1_trade_date': tracking.get('t_plus_1_trade_date'),
-        't_plus_2_trade_date': tracking.get('t_plus_2_trade_date'),
-        'now_trade_date': tracking.get('now_trade_date'),
-        'latest_observed_trade_date': tracking.get('latest_observed_trade_date'),
-        'symbol_latest_trade_date': tracking.get('symbol_latest_trade_date'),
-        'browser_trade_date_confirmed': tracking.get('browser_trade_date_confirmed'),
-        'local_data_synced_to_trade_date': tracking.get('local_data_synced_to_trade_date'),
-        'checks': tracking.get('checks') or [],
-        'latest_checkpoint': entry,
-    }
-    target_validation.write_text(json.dumps(content, ensure_ascii=False, indent=2), encoding='utf-8')
 
 
 def persist_pending_validation(payload: dict, checkpoint: str) -> str | None:
@@ -744,14 +738,14 @@ def persist_pending_validation(payload: dict, checkpoint: str) -> str | None:
     checkpoint_label = CHECKPOINT_FILE_LABELS.get(checkpoint, checkpoint or '未分类')
     stock_name = sanitize_report_name(payload.get('stock_name'))
     name_suffix = f"-{stock_name}" if stock_name else ''
+    # 清理旧文件
     for old_path in target_dir.glob(f"待验证-{payload['symbol']}*-{checkpoint_label}.*"):
         if old_path.is_file():
             old_path.unlink()
+    # 保存 md 报告
     target = target_dir / f"待验证-{payload['symbol']}{name_suffix}-{checkpoint_label}.md"
     target.write_text(render_pending_validation_markdown(payload), encoding='utf-8')
-    entry = build_checkpoint_entry(payload, checkpoint)
-    target_jsonl = target_dir / f"待验证-{payload['symbol']}{name_suffix}-{checkpoint_label}.checkpoints.jsonl"
-    append_checkpoint_jsonl(target_jsonl, entry)
-    target_validation = target_dir / f"待验证-{payload['symbol']}{name_suffix}-{checkpoint_label}.validation.json"
-    write_validation_payload(target_validation, payload, checkpoint, entry)
+    # 保存 parquet 结构化数据
+    parquet_target = target_dir / f"待验证-{payload['symbol']}{name_suffix}-{checkpoint_label}"
+    save_analysis_parquet(parquet_target, payload, mode="overwrite")
     return str(target)

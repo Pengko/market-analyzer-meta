@@ -103,27 +103,39 @@ def identify_pullback_ready(
     concepts: list[dict],
     history: dict[str, list[dict]],
 ) -> list[dict]:
-    """识别回调到位的板块。"""
+    """识别回调到位的板块。
+
+    判断逻辑：
+    1. 近5日累计涨幅 > 3%（说明有资金关注）
+    2. 近3日跌幅 > 2%（有回调）
+    3. 回调幅度 > 40%（从最高点回调至少40%，说明回调充分）
+    """
     ready = []
 
     for c in concepts:
         name = c.get("theme_name", "")
         hist = history.get(name, [])
-        if len(hist) < 3:
+        if len(hist) < 5:
             continue
 
-        # 计算近5日累计涨跌幅
+        # 计算近5日最高点和累计涨幅
         pct_5d = sum(h.get("pct_change", 0) for h in hist[-5:])
-        # 计算近3日累计涨跌幅
         pct_3d = sum(h.get("pct_change", 0) for h in hist[-3:])
+        max_5d = max(h.get("pct_change", 0) for h in hist[-5:])
 
-        # 判断是否回调到位
-        # 条件：近5日涨>2%但近3日跌>1.5%（高位回调）
-        # 或者：近5日涨>5%但近3日跌>2%（强势回调）
+        # 回调幅度 = (最高点 - 当前) / 最高点 * 100
+        pullback_pct = 0
+        if max_5d > 0:
+            current_pct = hist[-1].get("pct_change", 0)
+            pullback_pct = (max_5d - current_pct) / max_5d * 100
+
+        # 判断回调到位
+        # 条件1：近5日涨>3%，且近3日跌>2%，且回调幅度>40%
+        # 条件2：近5日涨>5%，且近3日跌>3%，且回调幅度>50%
         pullback_ready = False
-        if pct_5d > 2 and pct_3d < -1.5:
+        if pct_5d > 3 and pct_3d < -2 and pullback_pct > 40:
             pullback_ready = True
-        elif pct_5d > 5 and pct_3d < -2:
+        elif pct_5d > 5 and pct_3d < -3 and pullback_pct > 50:
             pullback_ready = True
 
         if pullback_ready:
@@ -131,13 +143,69 @@ def identify_pullback_ready(
                 "name": name,
                 "pct_5d": round(pct_5d, 2),
                 "pct_3d": round(pct_3d, 2),
+                "pullback_pct": round(pullback_pct, 1),
                 "hot": c.get("hot", 0),
                 "lead_stock": c.get("lead_stock", ""),
-                "pullback_reason": f"近5日+{pct_5d:.1f}%但近3日{pct_3d:.1f}%，高位回调",
+                "pullback_reason": f"近5日+{pct_5d:.1f}%但近3日{pct_3d:.1f}%，回调幅度{pullback_pct:.0f}%，回调充分",
             })
 
-    ready.sort(key=lambda x: x["pct_5d"], reverse=True)
+    ready.sort(key=lambda x: x["pullback_pct"], reverse=True)
     return ready[:5]
+
+
+def load_limit_cpt(trade_date_compact: str) -> list[dict]:
+    """加载板块级涨停统计（limit_cpt_list）。"""
+    path = STOCK_DATA_ROOT / "limit_cpt_list" / "limit_cpt_list.parquet"
+    if not path.exists():
+        return []
+    try:
+        df = pq.read_table(path).to_pandas()
+        day_df = df[df["trade_date"].astype(str) == trade_date_compact]
+        if day_df.empty:
+            return []
+        return [
+            {
+                "name": str(r.get("name", "")),
+                "up_nums": int(r.get("up_nums", 0) or 0),
+                "pct_chg": float(r.get("pct_chg", 0) or 0),
+            }
+            for _, r in day_df.iterrows()
+        ]
+    except Exception:
+        return []
+
+
+def find_limit_up_pullback_sectors(
+    limit_cpt: list[dict],
+    concepts: list[dict],
+    history: dict[str, list[dict]],
+) -> list[dict]:
+    """找出涨停家数多+回调到位的板块。"""
+    # 从 limit_cpt 找涨停家数 > 3 的板块
+    high_limit_sectors = [r for r in limit_cpt if r.get("up_nums", 0) >= 3]
+
+    result = []
+    for s in high_limit_sectors:
+        name = s["name"]
+        # 在 concepts 中找对应板块
+        concept = next((c for c in concepts if name in c.get("theme_name", "")), None)
+        if not concept:
+            continue
+
+        hist = history.get(name, [])
+        pct_3d = sum(h.get("pct_change", 0) for h in hist[-3:]) if hist else 0
+
+        result.append({
+            "name": name,
+            "up_nums": s["up_nums"],
+            "pct_chg": s["pct_chg"],
+            "pct_3d": round(pct_3d, 2),
+            "pullback_ok": pct_3d < -1.5,  # 近3日跌>1.5%算回调
+            "lead_stock": concept.get("lead_stock", ""),
+        })
+
+    result.sort(key=lambda x: x["up_nums"], reverse=True)
+    return result[:5]
 
 
 def analyze_money_flow_direction(concepts: list[dict], history: dict[str, list[dict]]) -> dict[str, Any]:
@@ -172,6 +240,7 @@ def analyze_sector_rotation(trade_date_compact: str) -> dict[str, Any]:
     # 加载数据
     concepts = load_dc_concept(trade_date_compact)
     history = load_dc_concept_history(trade_date_compact, days=5)
+    limit_cpt = load_limit_cpt(trade_date_compact)
 
     if not concepts:
         return {"status": "missing", "reason": "无 DC 题材数据"}
@@ -182,8 +251,11 @@ def analyze_sector_rotation(trade_date_compact: str) -> dict[str, Any]:
     # 轮动阶段
     rotation_status = analyze_rotation_status(concepts)
 
-    # 回调到位板块
+    # 回调到位板块（新版：回调幅度>40%才算到位）
     pullback_ready = identify_pullback_ready(concepts, history)
+
+    # 涨停家数多+回调到位的板块
+    limit_pullback = find_limit_up_pullback_sectors(limit_cpt, concepts, history)
 
     # 资金流向
     money_flow = analyze_money_flow_direction(concepts, history)
@@ -205,7 +277,7 @@ def analyze_sector_rotation(trade_date_compact: str) -> dict[str, Any]:
     hot_sectors.sort(key=lambda x: x["pct_5d"], reverse=True)
 
     # 轮动预判
-    rotation_prediction = _predict_rotation(hot_sectors, pullback_ready, money_flow)
+    rotation_prediction = _predict_rotation(hot_sectors, pullback_ready, money_flow, limit_pullback)
 
     return {
         "status": "available",
@@ -213,6 +285,7 @@ def analyze_sector_rotation(trade_date_compact: str) -> dict[str, Any]:
         "rotation_status": rotation_status,
         "hot_sectors": hot_sectors[:10],
         "pullback_ready": pullback_ready,
+        "limit_pullback": limit_pullback,
         "money_flow": money_flow,
         "rotation_prediction": rotation_prediction,
     }
@@ -222,27 +295,36 @@ def _predict_rotation(
     hot_sectors: list[dict],
     pullback_ready: list[dict],
     money_flow: dict,
+    limit_pullback: list[dict] | None = None,
 ) -> dict[str, Any]:
     """轮动预判。"""
-    # 高位板块风险
     high_risk = [s for s in hot_sectors if s.get("pct_5d", 0) > 8]
-
-    # 回调到位板块机会
     opportunities = [p["name"] for p in pullback_ready[:3]]
 
-    # 预判
-    if high_risk and pullback_ready:
-        prediction = f"高位板块{high_risk[0]['name']}面临回调，资金可能流向{opportunities[0] if opportunities else '未知'}"
+    # 从涨停回调板块中找机会
+    limit_opportunities = []
+    if limit_pullback:
+        for s in limit_pullback:
+            if s.get("pullback_ok"):
+                limit_opportunities.append(f"{s['name']}（{s['up_nums']}家涨停，回调到位）")
+
+    if high_risk and limit_opportunities:
+        prediction = f"高位板块{high_risk[0]['name']}面临回调，资金可能流向{limit_opportunities[0]}"
+    elif high_risk and pullback_ready:
+        prediction = f"高位板块{high_risk[0]['name']}面临回调，资金可能流向{opportunities[0]}"
     elif high_risk:
         prediction = f"高位板块{high_risk[0]['name']}面临回调，暂无明确接棒方向"
     elif pullback_ready:
         prediction = f"回调到位板块{opportunities[0]}可能接力反弹"
+    elif limit_opportunities:
+        prediction = f"涨停板块{limit_opportunities[0]}值得重点关注"
     else:
         prediction = "板块轮动方向不明确"
 
     return {
         "high_risk_sectors": [s["name"] for s in high_risk],
         "opportunities": opportunities,
+        "limit_opportunities": limit_opportunities,
         "prediction": prediction,
     }
 

@@ -24,10 +24,12 @@ if _scripts_dir not in sys.path:
     sys.path.insert(0, _scripts_dir)
 
 # ── 路径 ──────────────────────────────────────────────
-STOCK_ROOT   = Path.home() / "quant-data" / "tushare" / "股票数据"
-INDEX_ROOT   = Path.home() / "quant-data" / "tushare" / "指数数据"
-THEME_ROOT   = Path.home() / "quant-data" / "tushare" / "股票数据" / "theme_data"
-TRADE_CAL    = STOCK_ROOT / "trade_cal" / "trade_cal_all.csv"
+from common import STOCK_DATA_ROOT, INDEX_DATA_ROOT, THEME_DATA_ROOT
+
+STOCK_ROOT = STOCK_DATA_ROOT
+INDEX_ROOT = INDEX_DATA_ROOT
+THEME_ROOT = THEME_DATA_ROOT
+TRADE_CAL  = STOCK_ROOT / "trade_cal" / "trade_cal_all.csv"
 DC_INDEX_CACHE = Path("/tmp/stock_deep_dc_index.json")
 
 

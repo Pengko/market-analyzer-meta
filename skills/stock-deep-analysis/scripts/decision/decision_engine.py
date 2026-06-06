@@ -74,7 +74,7 @@ def _build_dc_index() -> None:
     import json as _json
     from pathlib import Path as _Path
 
-    theme_root = _Path("/Users/penghongming/quant-data/tushare/股票数据/theme_data")
+    theme_root = STOCK_DATA_ROOT / "theme_data"
 
     # BK code → concept name (仅概念板块)
     c2n: dict[str, str] = {}
@@ -198,7 +198,7 @@ def analyze_peer(market: Any, concept: Any) -> dict[str, Any]:
     primary_sector = primary["name"]
 
     # ── 5. 在 primary_sector 成分股中, 按个股相关性选出对标股 ──
-    daily_root = Path("/Users/penghongming/quant-data/tushare/股票数据/daily")
+    daily_root = STOCK_DATA_ROOT / "daily"
     peer_codes = c2s.get(primary.get("bk_code", ""), [])
     peer_candidates: list[dict] = []
     target_pct_arr = target_pcts

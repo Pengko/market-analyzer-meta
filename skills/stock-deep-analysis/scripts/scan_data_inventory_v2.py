@@ -19,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-STOCK_DATA_ROOT = Path.home() / "quant-data/tushare/股票数据"
+from common import STOCK_DATA_ROOT
 
 YEAR_PATTERN = re.compile(r"^\d{4}$")
 DATE_IN_FILENAME = re.compile(r"(\d{8})")

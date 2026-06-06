@@ -2,8 +2,10 @@ from pathlib import Path
 from typing import Any
 import pandas as pd
 
-_STOCK_ROOT = Path("/Users/penghongming/quant-data/tushare/股票数据")
-_INDEX_ROOT = Path("/Users/penghongming/quant-data/tushare/指数数据")
+from common import STOCK_DATA_ROOT, INDEX_DATA_ROOT
+
+_STOCK_ROOT = STOCK_DATA_ROOT
+_INDEX_ROOT = INDEX_DATA_ROOT
 
 
 def _read_one(path: Path) -> pd.DataFrame | None:

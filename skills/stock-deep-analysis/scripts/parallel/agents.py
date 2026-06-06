@@ -23,6 +23,7 @@ SCRIPTS_DIR = PROJECT_ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
+from common import STOCK_DATA_ROOT, NEWS_DATA_ROOT
 from time_util import scenario_from_now
 from financing_analyzer import safe_float, analyze_financing_context
 from analysis.stock_trend_analyzer import analyze_trend_structure, analyze_chip_structure, analyze_volatility_context
@@ -190,7 +191,7 @@ _INDUSTRY_KEYWORD_MAP: dict[str, list[str]] = {
 
 def _load_stock_industry(full_symbol: str) -> str | None:
     """从本地 stock_basic 读取行业信息"""
-    path = Path.home() / "quant-data" / "tushare" / "股票数据" / "stock_basic" / "stock_basic_all.csv"
+    path = STOCK_DATA_ROOT / "stock_basic" / "stock_basic_all.csv"
     if not path.exists():
         return None
     try:
@@ -284,7 +285,7 @@ def _fetch_browser_news_fallback(
         return [], "browser script not found"
 
     pure_symbol = full_symbol.split(".")[0]
-    output_dir = Path.home() / "quant-data" / "tushare" / "面消息数据" / "raw" / "browser_news"
+    output_dir = NEWS_DATA_ROOT / "raw" / "browser_news"
     output_path = output_dir / f"browser_news_{pure_symbol}_{trade_date_text}.json"
 
     # 若已有今天的缓存，直接读取（避免重复抓取）
@@ -556,7 +557,7 @@ def run_news_agent(
 
     # 构建标准输出路径（保持与旧路径兼容）
     year, month, day = trade_date_text.split("-")
-    news_data_root = Path.home() / "quant-data" / "tushare" / "消息面数据"
+    news_data_root = NEWS_DATA_ROOT
     pipeline_root = news_data_root / "raw" / "news_pipeline"
     canonical_output_path = pipeline_root / year / month / day / f"news_pipeline_{pure_symbol}_{trade_date_text}.json"
 

@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from common import STOCK_DATA_ROOT
+from common import STOCK_DATA_ROOT, NEWS_DATA_ROOT
 from data.config_loader import cfg
 
 # ---------------------------------------------------------------------------
@@ -534,7 +534,7 @@ def load_browser_margin_signal(full_symbol: str) -> dict[str, Any]:
 # SQLite 消息库读取
 # ---------------------------------------------------------------------------
 
-NEWS_ROOT = Path("/Users/penghongming/quant-data/tushare/消息面数据")
+NEWS_ROOT = NEWS_DATA_ROOT
 
 
 def _match_keywords(text: str | None, keywords: set[str]) -> bool:

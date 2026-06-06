@@ -11,8 +11,10 @@ from typing import Any
 
 import pandas as pd
 
-FINANCIAL_ROOT = Path.home() / "quant-data" / "tushare" / "财务数据"
-STOCK_ROOT = Path.home() / "quant-data" / "tushare" / "股票数据"
+from common import FINANCIAL_DATA_ROOT, STOCK_DATA_ROOT
+
+FINANCIAL_ROOT = FINANCIAL_DATA_ROOT
+STOCK_ROOT = STOCK_DATA_ROOT
 
 
 def _read_parquet(path: Path) -> list[dict]:

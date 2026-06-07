@@ -189,7 +189,10 @@ def fetch_snapshot_tencent(symbol: str) -> dict[str, Any] | None:
     import urllib.request
     
     code = symbol.replace(".SZ", "").replace(".SH", "")
-    prefix = "sz" if symbol.endswith(".SZ") else "sh"
+    if symbol.endswith(".SH") or (not symbol.endswith(".SZ") and code.startswith("6")):
+        prefix = "sh"
+    else:
+        prefix = "sz"
     url = f"http://qt.gtimg.cn/q={prefix}{code}"
     
     try:

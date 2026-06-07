@@ -504,47 +504,54 @@ def fetch_local_news(ts_code: str, trade_date: str) -> dict:
 # ============ 分析函数 ============
 
 def analyze_top_list(top_list_data: dict, top_inst_data: dict) -> dict:
-    """龙虎榜分析：基于龙虎榜明细和席位数据生成判断"""
-    record = top_list_data.get("record")
-    if not record:
-        return {"on_list": False, "signal": "未上榜", "summary": "当日无龙虎榜数据"}
+    """龙虎榜分析：基于近30日龙虎榜明细和席位数据生成判断"""
+    records = top_list_data.get("records", [])
+    count = top_list_data.get("count", 0)
+    if not records:
+        return {"on_list": False, "signal": "未上榜", "summary": "近30个交易日无龙虎榜数据", "count": 0}
 
+    latest = records[-1] if records else {}
     try:
-        net_rate = float(record.get("net_rate", 0) or 0)
-        amount_rate = float(record.get("amount_rate", 0) or 0)
-        turnover_rate = float(record.get("turnover_rate", 0) or 0)
-        net_amount = float(record.get("net_amount", 0) or 0)
+        net_rate = float(latest.get("net_rate", 0) or 0)
+        amount_rate = float(latest.get("amount_rate", 0) or 0)
+        turnover_rate = float(latest.get("turnover_rate", 0) or 0)
+        net_amount = float(latest.get("net_amount", 0) or 0)
     except (ValueError, TypeError):
         net_rate = amount_rate = turnover_rate = net_amount = 0
 
-    reason = record.get("reason", "N/A")
+    reason = latest.get("reason", "N/A")
 
     # 席位分析
     inst_records = top_inst_data.get("records", [])
     buy_seats = [r for r in inst_records if r.get("side") == "buy"]
     sell_seats = [r for r in inst_records if r.get("side") == "sell"]
 
+    # 连续上榜天数
+    dates_on_list = sorted(set(r.get("trade_date", "") for r in records))
+
     # 判断逻辑
     if net_rate >= 35 and amount_rate >= 60:
         signal = "强锁仓接力"
-        summary = f"龙虎榜净买占比 {net_rate:.2f}%，成交占比 {amount_rate:.2f}%，强锁仓特征明显"
+        summary = f"近30日上榜{count}次，最近净买占比 {net_rate:.2f}%，成交占比 {amount_rate:.2f}%，强锁仓特征明显"
     elif net_rate >= 12:
         signal = "正向确认"
-        summary = f"龙虎榜净买占比 {net_rate:.2f}%，达到正向确认阈值"
+        summary = f"近30日上榜{count}次，最近净买占比 {net_rate:.2f}%，达到正向确认阈值"
     elif net_rate >= 8:
         signal = "新增主导"
-        summary = f"龙虎榜净买占比 {net_rate:.2f}%，说明有新增主导资金介入"
+        summary = f"近30日上榜{count}次，最近净买占比 {net_rate:.2f}%，说明有新增主导资金介入"
     elif net_rate <= -5:
         signal = "派发兑现"
-        summary = f"龙虎榜净卖占比较高 {net_rate:.2f}%，更像派发或高位兑现"
+        summary = f"近30日上榜{count}次，最近净卖占比较高 {net_rate:.2f}%，更像派发或高位兑现"
     else:
         signal = "边界模糊"
-        summary = f"龙虎榜净买占比 {net_rate:.2f}%，属于边界模糊区间"
+        summary = f"近30日上榜{count}次，最近净买占比 {net_rate:.2f}%，属于边界模糊区间"
 
     return {
         "on_list": True,
         "signal": signal,
         "summary": summary,
+        "count": count,
+        "dates_on_list": dates_on_list,
         "net_rate": round(net_rate, 2),
         "amount_rate": round(amount_rate, 2),
         "turnover_rate": round(turnover_rate, 2),
@@ -939,8 +946,9 @@ def main() -> int:
         future_chips = executor.submit(fetch_local_chips, ts_code)
         future_basic = executor.submit(fetch_local_daily_basic, ts_code)
         future_moneyflow = executor.submit(fetch_local_moneyflow, ts_code, args.date)
-        future_top_list = executor.submit(fetch_local_top_list, ts_code, args.date)
-        future_top_inst = executor.submit(fetch_local_top_inst, ts_code, args.date)
+        top_dates_30 = get_recent_trade_dates(trade_date, 30)
+        future_top_list = executor.submit(fetch_local_top_list_for_dates, ts_code, top_dates_30)
+        future_top_inst = executor.submit(fetch_local_top_inst_for_dates, ts_code, top_dates_30)
         future_news = executor.submit(fetch_local_news, ts_code, args.date)
 
         # 龙虎榜分析器

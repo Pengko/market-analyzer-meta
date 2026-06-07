@@ -919,6 +919,7 @@ python3 "/Users/penghongming/agent-skills/custom/stock-deep-analysis/scripts/det
 | references/parquet-only-migration-2026-05-26.md | 本地数据统一 parquet-only 改造记录 |
 | references/limit-break-pattern.md | 涨停炸板分时分析判断框架 |
 | references/eastmoney-longhu-extraction.md | 东方财富龙虎榜详细席位提取方法：概览API、明细页浏览器提取法、席位分析要点与常见陷阱 |
+| references/glass-substrate-packaging-technology.md | 玻璃基封装载板技术与A股产业链：NVIDIA→康宁→京东方叙事链、MOU评估方法、新业务公告评估清单、京东方Q1财务约束 |
 | references/corporate-governance-change-analysis.md | 公司治理变动分析框架 |
 | references/concept-board-verification.md | 概念板块归属验证方法：查证个股是否属于某概念、常见概念边界混淆点（显示vs封装玻璃基板等）、情绪关联vs业务关联 |
 | references/parquet-column-pitfalls.md | 本地 parquet 实战列名陷阱：kdj_j_bfq→kdj_bfq、moneyflow date→trade_date、execute_code f-string 转义 |

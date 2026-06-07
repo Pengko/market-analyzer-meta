@@ -925,8 +925,9 @@ def main() -> int:
     # 1. 并行获取所有数据
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         future_snapshot = executor.submit(fetch_tencent_snapshot, tencent_code)
+        date_dashed = f"{args.date[:4]}-{args.date[4:6]}-{args.date[6:]}" if len(args.date) == 8 else args.date
         future_kline = executor.submit(
-            fetch_tencent_kline, tencent_code, "2026-04-01", args.date
+            fetch_tencent_kline, tencent_code, "2026-04-01", date_dashed
         )
         future_minute = executor.submit(
             fetch_tencent_minute, tencent_code, trade_date

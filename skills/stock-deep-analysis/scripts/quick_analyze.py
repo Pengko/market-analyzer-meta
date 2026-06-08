@@ -305,8 +305,10 @@ def fetch_local_factors(ts_code: str) -> dict:
 
 
 def fetch_local_chips(ts_code: str) -> dict:
-    """获取本地筹码分布 —— parquet only"""
-    rows = _read_stock_parquet("cyq_chips", ts_code)
+    """获取本地筹码分布 —— 优先 cyq_perf（含成本线+获利比例），降级 cyq_chips"""
+    rows = _read_stock_parquet("cyq_perf", ts_code)
+    if not rows:
+        rows = _read_stock_parquet("cyq_chips", ts_code)
     if not rows:
         return {"status": "missing", "rows": [], "latest_date": None}
 

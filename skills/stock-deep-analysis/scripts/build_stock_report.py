@@ -407,7 +407,7 @@ def build_history_comparison(payload: dict) -> dict[str, Any]:
     
     symbol = payload.get("symbol")
     trade_date = payload.get("trade_date")
-    pending_dir = Path(cfg.paths("report_output"))
+    pending_dir = Path.home() / "quant-data" / "市场分析" / "reports" / "个股分析报告"
     
     if not symbol or not trade_date:
         return {"status": "missing_info"}

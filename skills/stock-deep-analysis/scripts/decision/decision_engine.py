@@ -31,7 +31,7 @@ from analysis.sector_analyzer import load_stock_basic_index
 from data.config_loader import cfg
 
 MINUTE_ROOT = cfg.paths("minute")
-PENDING_VALIDATIONS_ROOT = cfg.paths("report_output")
+PENDING_VALIDATIONS_ROOT = Path.home() / "quant-data" / "市场分析" / "reports" / "个股分析报告"
 
 
 CHECKPOINT_FILE_LABELS = {
@@ -733,7 +733,9 @@ def persist_pending_validation(payload: dict, checkpoint: str) -> str | None:
     tracking = payload['validation_tracking']
     if tracking['record_status'] != 'pending_validation':
         return None
-    target_dir = PENDING_VALIDATIONS_ROOT / payload['trade_date']
+    trade_date = payload['trade_date']
+    td = f"{trade_date[:4]}/{trade_date[4:6]}/{trade_date[6:]}"
+    target_dir = PENDING_VALIDATIONS_ROOT / td
     target_dir.mkdir(parents=True, exist_ok=True)
     checkpoint_label = CHECKPOINT_FILE_LABELS.get(checkpoint, checkpoint or '未分类')
     stock_name = sanitize_report_name(payload.get('stock_name'))

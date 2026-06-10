@@ -30,8 +30,8 @@ CODE=$(echo "$SYMBOL" | sed 's/\.SH//;s/\.SZ//')
 MARKET_PREFIX=$(echo "$SYMBOL" | grep -o '\.S[HZ]')
 NAME=$(echo "$REPORT" | head -1 | sed 's/# //;s/ (.*//')
 
-# 标准保存路径
-SAVE_DIR="${SKILL_DIR}/references/pending-validations/${DATE}"
+# 标准保存路径 (YYYY/MM/DD 结构)
+SAVE_DIR="${HOME}/quant-data/市场分析/reports/个股分析报告/${DATE:0:4}/${DATE:4:2}/${DATE:6:2}"
 mkdir -p "$SAVE_DIR"
 FILENAME="待验证-${CODE}${MARKET_PREFIX}-${NAME}-精简分析.md"
 REPORT_PATH="${SAVE_DIR}/${FILENAME}"

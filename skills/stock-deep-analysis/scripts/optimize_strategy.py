@@ -24,9 +24,9 @@ from typing import Any, Dict, List, Optional
 
 SCRIPT_DIR = Path(__file__).parent
 SKILL_DIR = SCRIPT_DIR.parent
-VALIDATIONS_DIR = SKILL_DIR / "references" / "validations"
+PENDING_DIR = Path.home() / "quant-data" / "市场分析" / "reports" / "个股分析报告"
+VALIDATIONS_DIR = PENDING_DIR / "validations"
 STRATEGY_DIR = SKILL_DIR / "references" / "strategy-analysis"
-PENDING_DIR = SKILL_DIR / "references" / "pending-validations"
 from data.config_loader import cfg
 from data.data_access import _read_stock_parquet
 
@@ -200,107 +200,113 @@ def run_backtest_on_validated_samples() -> Dict:
         "strong_patterns": [],
     }
 
-    for date_dir in sorted(PENDING_DIR.iterdir()):
-        if not date_dir.is_dir():
+    # 遍历 YYYY/MM/DD 目录结构
+    for year_dir in sorted(PENDING_DIR.iterdir()):
+        if not year_dir.is_dir() or not year_dir.name.isdigit():
             continue
-
-        for md_file in sorted(date_dir.glob("pending-validation-*.md")):
-            content = md_file.read_text(encoding="utf-8")
-
-            symbol_match = re.search(r"#\s*(\d{6}\.[A-Z]{2})\s*", content)
-            target_match = re.search(r"目标交易日[：:]\s*(\d{4}-\d{2}-\d{2})", content)
-
-            if not symbol_match or not target_match:
+        for month_dir in sorted(year_dir.iterdir()):
+            if not month_dir.is_dir() or not month_dir.name.isdigit():
                 continue
-
-            symbol = symbol_match.group(1)
-            target_date = target_match.group(1).replace("-", "")
-
-            pred_match = re.search(
-                r"隔夜次日预期[:：]\s*\n\s*-\s*预测[：:]\s*(.+?)(?:\n|$)", content
-            )
-            if not pred_match:
-                continue
-
-            prediction = pred_match.group(1).strip()
-
-            daily_rows = _read_stock_parquet("daily", symbol)
-            rows = []
-            for row in daily_rows:
-                row_symbol = row.get("ts_code", "")
-                if row_symbol != symbol:
+            for day_dir in sorted(month_dir.iterdir()):
+                if not day_dir.is_dir() or not day_dir.name.isdigit():
                     continue
-                rows.append(
-                    {
-                        "trade_date": str(row.get("trade_date", "")),
-                        "close": float(row.get("close", 0) or 0),
-                        "pct": float(row.get("pct_chg", 0) or 0),
-                    }
-                )
+                for md_file in sorted(day_dir.glob("pending-validation-*.md")):
+                    content = md_file.read_text(encoding="utf-8")
 
-            rows.sort(key=lambda x: x["trade_date"])
+                    symbol_match = re.search(r"#\s*(\d{6}\.[A-Z]{2})\s*", content)
+                    target_match = re.search(r"目标交易日[：:]\s*(\d{4}-\d{2}-\d{2})", content)
 
-            target_row = None
-            next_row = None
-            for i, row in enumerate(rows):
-                if row["trade_date"] == target_date:
-                    target_row = row
-                    if i + 1 < len(rows):
-                        next_row = rows[i + 1]
-                    break
+                    if not symbol_match or not target_match:
+                        continue
 
-            if not target_row or not next_row:
-                continue
+                    symbol = symbol_match.group(1)
+                    target_date = target_match.group(1).replace("-", "")
 
-            results["total_samples"] += 1
-            next_pct = next_row["pct"]
-            actual_label = classify_by_pct(next_pct)
-            actual_direction = coarse_direction(actual_label)
+                    pred_match = re.search(
+                        r"隔夜次日预期[:：]\s*\n\s*-\s*预测[：:]\s*(.+?)(?:\n|$)", content
+                    )
+                    if not pred_match:
+                        continue
 
-            exact_hit = False
-            direction_hit = False
+                    prediction = pred_match.group(1).strip()
 
-            pred_lower = prediction.lower()
-            actual_lower = actual_label.lower()
+                    daily_rows = _read_stock_parquet("daily", symbol)
+                    rows = []
+                    for row in daily_rows:
+                        row_symbol = row.get("ts_code", "")
+                        if row_symbol != symbol:
+                            continue
+                        rows.append(
+                            {
+                                "trade_date": str(row.get("trade_date", "")),
+                                "close": float(row.get("close", 0) or 0),
+                                "pct": float(row.get("pct_chg", 0) or 0),
+                            }
+                        )
 
-            if "强" in prediction and "强" in actual_lower:
-                exact_hit = True
-            elif "偏强" in prediction and "偏强" in actual_lower:
-                exact_hit = True
-            elif "分歧" in prediction and "分歧" in actual_lower:
-                exact_hit = True
-            elif "偏弱" in prediction and "偏弱" in actual_lower:
-                exact_hit = True
-            elif "兑现" in prediction and "兑现" in actual_lower:
-                exact_hit = True
+                    rows.sort(key=lambda x: x["trade_date"])
 
-            if (
-                "偏多" in pred_lower or "强" in pred_lower
-            ) and actual_direction == "偏多":
-                direction_hit = True
-            elif (
-                "偏空" in pred_lower or "弱" in pred_lower or "兑现" in pred_lower
-            ) and actual_direction == "偏空":
-                direction_hit = True
-            elif "分歧" in pred_lower and actual_direction == "中性":
-                direction_hit = True
-            elif "分歧" in pred_lower and abs(next_pct) < 2:
-                direction_hit = True
+                    target_row = None
+                    next_row = None
+                    for i, row in enumerate(rows):
+                        if row["trade_date"] == target_date:
+                            target_row = row
+                            if i + 1 < len(rows):
+                                next_row = rows[i + 1]
+                            break
 
-            if exact_hit:
-                results["t1_exact_hits"] += 1
-            if direction_hit:
-                results["t1_direction_hits"] += 1
+                    if not target_row or not next_row:
+                        continue
 
-            for pattern in ["强", "偏强", "分歧", "偏弱", "兑现"]:
-                if pattern in prediction:
-                    if pattern not in results["factor_stats"]:
-                        results["factor_stats"][pattern] = {"total": 0, "hits": 0}
-                    results["factor_stats"][pattern]["total"] += 1
-                    if pattern in actual_label or (
-                        pattern == "强" and "强" in actual_lower
-                    ):
-                        results["factor_stats"][pattern]["hits"] += 1
+                    results["total_samples"] += 1
+                    next_pct = next_row["pct"]
+                    actual_label = classify_by_pct(next_pct)
+                    actual_direction = coarse_direction(actual_label)
+
+                    exact_hit = False
+                    direction_hit = False
+
+                    pred_lower = prediction.lower()
+                    actual_lower = actual_label.lower()
+
+                    if "强" in prediction and "强" in actual_lower:
+                        exact_hit = True
+                    elif "偏强" in prediction and "偏强" in actual_lower:
+                        exact_hit = True
+                    elif "分歧" in prediction and "分歧" in actual_lower:
+                        exact_hit = True
+                    elif "偏弱" in prediction and "偏弱" in actual_lower:
+                        exact_hit = True
+                    elif "兑现" in prediction and "兑现" in actual_lower:
+                        exact_hit = True
+
+                    if (
+                        "偏多" in pred_lower or "强" in pred_lower
+                    ) and actual_direction == "偏多":
+                        direction_hit = True
+                    elif (
+                        "偏空" in pred_lower or "弱" in pred_lower or "兑现" in pred_lower
+                    ) and actual_direction == "偏空":
+                        direction_hit = True
+                    elif "分歧" in pred_lower and actual_direction == "中性":
+                        direction_hit = True
+                    elif "分歧" in pred_lower and abs(next_pct) < 2:
+                        direction_hit = True
+
+                    if exact_hit:
+                        results["t1_exact_hits"] += 1
+                    if direction_hit:
+                        results["t1_direction_hits"] += 1
+
+                    for pattern in ["强", "偏强", "分歧", "偏弱", "兑现"]:
+                        if pattern in prediction:
+                            if pattern not in results["factor_stats"]:
+                                results["factor_stats"][pattern] = {"total": 0, "hits": 0}
+                            results["factor_stats"][pattern]["total"] += 1
+                            if pattern in actual_label or (
+                                pattern == "强" and "强" in actual_lower
+                            ):
+                                results["factor_stats"][pattern]["hits"] += 1
 
     for pattern, stats in results["factor_stats"].items():
         if stats["total"] > 0:

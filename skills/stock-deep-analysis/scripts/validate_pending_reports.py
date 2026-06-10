@@ -27,8 +27,8 @@ from data.config_loader import cfg
 
 SCRIPT_DIR = Path(__file__).parent
 SKILL_DIR = SCRIPT_DIR.parent
-PENDING_DIR = cfg.paths("report_output")
-VALIDATIONS_DIR = cfg.paths("validations_dir")
+PENDING_DIR = Path.home() / "quant-data" / "市场分析" / "reports" / "个股分析报告"
+VALIDATIONS_DIR = PENDING_DIR / "validations"
 DATA_ROOT = cfg.paths("stock_data_root")
 DAILY_DIR = DATA_ROOT / "daily"
 TRADE_CAL_PATH = cfg.paths("trade_cal_dir") / "trade_cal_all.csv"
@@ -380,7 +380,8 @@ def scan_pending_validations(target_date: Optional[str] = None) -> list:
     patterns = ("待验证-*.md", "pending-validation-*.md")
 
     if target_date:
-        date_dir = PENDING_DIR / target_date
+        td = f"{target_date[:4]}/{target_date[4:6]}/{target_date[6:]}"
+        date_dir = PENDING_DIR / td
         if date_dir.exists():
             md_files = []
             for pattern in patterns:
@@ -571,8 +572,9 @@ def archive_validated_pending(report: dict[str, Any]) -> list[Path]:
     target_date = report.get("target_date")
     if not target_date:
         return archived
-    pending_date_dir = PENDING_DIR / target_date
-    validated_date_dir = VALIDATIONS_DIR / target_date
+    td = f"{target_date[:4]}/{target_date[4:6]}/{target_date[6:]}"
+    pending_date_dir = PENDING_DIR / td
+    validated_date_dir = VALIDATIONS_DIR / td
     validated_date_dir.mkdir(parents=True, exist_ok=True)
     for item in report.get("validations") or []:
         symbol = item.get("symbol")

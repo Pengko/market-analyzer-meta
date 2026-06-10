@@ -18,9 +18,9 @@ paths:
   financial_data_root: "~/quant-data/tushare/财务数据"
 
   # 报告输出目录
-  report_output: "~/agent-skills/custom/stock-deep-analysis/references/pending-validations"
+  report_output: "~/quant-data/市场分析/reports/个股分析报告"
   references_dir: "~/agent-skills/custom/stock-deep-analysis/references"
-  validations_dir: "~/agent-skills/custom/stock-deep-analysis/references/validations"
+  validations_dir: "~/quant-data/市场分析/reports/个股分析报告/validations"
 
   # 个人持仓配置
   portfolio: "~/agent-skills/custom/stock-deep-analysis/references/portfolio/portfolio.yaml"
@@ -248,7 +248,7 @@ network:
 # -----------------------------------------------------------------------------
 report:
   # 默认输出目录（可用 --output 覆盖）
-  default_output_dir: "~/agent-skills/custom/stock-deep-analysis/references/pending-validations"
+  default_output_dir: "~/quant-data/市场分析/reports/个股分析报告"
 
   # 数值格式化
   formats:

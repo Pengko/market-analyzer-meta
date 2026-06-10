@@ -19,8 +19,8 @@ from typing import Any, Dict, List, Optional
 
 SCRIPT_DIR = Path(__file__).parent
 SKILL_DIR = SCRIPT_DIR.parent.parent
-VALIDATIONS_DIR = SKILL_DIR / "references" / "validations"
-PENDING_VALIDATIONS_DIR = SKILL_DIR / "references" / "pending-validations"
+PENDING_VALIDATIONS_DIR = Path.home() / "quant-data" / "市场分析" / "reports" / "个股分析报告"
+VALIDATIONS_DIR = PENDING_VALIDATIONS_DIR / "validations"
 STRATEGY_DIR = SKILL_DIR / "references" / "strategy-analysis"
 from data.config_loader import cfg
 
@@ -62,7 +62,9 @@ def get_week_range(week_str: Optional[str] = None) -> tuple[str, str]:
 def load_pending_validations_for_date(date_str: str) -> List[Dict]:
     """从 pending-validations 加载某日的 meta.json 报告"""
     validations = []
-    date_dir = PENDING_VALIDATIONS_DIR / date_str
+    # date_str: YYYY-MM-DD -> YYYY/MM/DD
+    td = date_str.replace("-", "/")
+    date_dir = PENDING_VALIDATIONS_DIR / td
     
     if not date_dir.exists():
         return validations

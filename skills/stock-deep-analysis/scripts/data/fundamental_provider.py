@@ -107,3 +107,45 @@ def get_top10_floatholders(symbol: str) -> list[dict]:
         if rows:
             return rows
     return []
+
+
+def get_pledge_stat(symbol: str) -> list[dict]:
+    """股权质押统计"""
+    for suffix in (f"{symbol}.parquet",):
+        rows = _read_parquet(STOCK_ROOT / "pledge_stat" / suffix)
+        if rows:
+            return rows
+    return []
+
+
+def get_pledge_detail(symbol: str) -> list[dict]:
+    """股权质押明细"""
+    for suffix in (f"{symbol}.parquet",):
+        rows = _read_parquet(STOCK_ROOT / "pledge_detail" / suffix)
+        if rows:
+            return rows
+    return []
+
+
+def get_share_float(symbol: str) -> list[dict]:
+    """限售股解禁"""
+    for suffix in (f"{symbol}.parquet",):
+        rows = _read_parquet(STOCK_ROOT / "share_float" / suffix)
+        if rows:
+            return rows
+    return []
+
+
+def get_repurchase(symbol: str) -> list[dict]:
+    """股票回购"""
+    for suffix in (f"{symbol}.parquet",):
+        rows = _read_parquet(STOCK_ROOT / "repurchase" / suffix)
+        if rows:
+            return rows
+    return []
+
+
+def get_risk_info_from_search(stock_name: str, stock_code: str) -> dict:
+    """获取风险搜索信息"""
+    from data.risk_search import get_risk_info
+    return get_risk_info(stock_name, stock_code)

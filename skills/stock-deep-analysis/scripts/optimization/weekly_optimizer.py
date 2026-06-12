@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional
 SCRIPT_DIR = Path(__file__).parent
 SKILL_DIR = SCRIPT_DIR.parent.parent
 PENDING_VALIDATIONS_DIR = Path.home() / "quant-data" / "市场分析" / "reports" / "个股分析报告"
-VALIDATIONS_DIR = PENDING_VALIDATIONS_DIR / "validations"
+VALIDATIONS_DIR = PENDING_VALIDATIONS_DIR / "已验证"
 STRATEGY_DIR = SKILL_DIR / "references" / "strategy-analysis"
 from data.config_loader import cfg
 
@@ -60,7 +60,7 @@ def get_week_range(week_str: Optional[str] = None) -> tuple[str, str]:
 
 
 def load_pending_validations_for_date(date_str: str) -> List[Dict]:
-    """从 pending-validations 加载某日的 meta.json 报告"""
+    """从待验证目录加载某日的 meta.json 报告"""
     validations = []
     # date_str: YYYY-MM-DD -> YYYY/MM/DD
     td = date_str.replace("-", "/")
@@ -150,7 +150,7 @@ def parse_pending_meta(meta: Dict, date_str: str) -> Optional[Dict]:
 
 
 def load_weekly_validations(start_date: str, end_date: str) -> List[Dict]:
-    """加载一周的验证报告（同时检查 validations 和 pending-validations）"""
+    """加载一周的验证报告（同时检查已验证和待验证目录）"""
     validations = []
     
     start = datetime.strptime(start_date, "%Y-%m-%d")

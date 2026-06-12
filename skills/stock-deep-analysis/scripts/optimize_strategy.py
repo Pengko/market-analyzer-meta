@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional
 SCRIPT_DIR = Path(__file__).parent
 SKILL_DIR = SCRIPT_DIR.parent
 PENDING_DIR = Path.home() / "quant-data" / "市场分析" / "reports" / "个股分析报告"
-VALIDATIONS_DIR = PENDING_DIR / "validations"
+VALIDATIONS_DIR = PENDING_DIR / "已验证"
 STRATEGY_DIR = SKILL_DIR / "references" / "strategy-analysis"
 from data.config_loader import cfg
 from data.data_access import _read_stock_parquet

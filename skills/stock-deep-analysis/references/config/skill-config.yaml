@@ -20,7 +20,7 @@ paths:
   # 报告输出目录
   report_output: "~/quant-data/市场分析/reports/个股分析报告"
   references_dir: "~/agent-skills/custom/stock-deep-analysis/references"
-  validations_dir: "~/quant-data/市场分析/reports/个股分析报告/validations"
+  validations_dir: "~/quant-data/市场分析/reports/个股分析报告/已验证"
 
   # 个人持仓配置
   portfolio: "~/agent-skills/custom/stock-deep-analysis/references/portfolio/portfolio.yaml"

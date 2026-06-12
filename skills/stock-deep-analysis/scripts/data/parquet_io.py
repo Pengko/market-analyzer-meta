@@ -211,10 +211,10 @@ def load_latest_report(
     """
     查询同一只股票最新的盘后分析报告（排除当前分析日期）
     
-    同时搜索 pending-validations 和 validations 目录
+    同时搜索待验证和已验证目录
     
     Args:
-        base_dir: 报告根目录（pending-validations）
+        base_dir: 报告根目录（待验证）
         symbol: 股票代码
         current_trade_date: 当前分析日期，排除此日期
         checkpoint: 只对比盘后报告
@@ -222,9 +222,9 @@ def load_latest_report(
     Returns:
         最新报告的扁平化数据，如果没有则返回 None
     """
-    # 同时搜索 pending-validations 和 validations 目录
+    # 同时搜索待验证和已验证目录
     search_dirs = [base_dir]
-    validations_dir = base_dir.parent / "validations"
+    validations_dir = base_dir.parent / "已验证"
     if validations_dir.exists():
         search_dirs.append(validations_dir)
     

@@ -2,7 +2,7 @@
 """
 待验证报告自动验证脚本
 
-每个交易日收盘后运行，对 pending-validations 文件夹中的待验证报告进行深度验证：
+每个交易日收盘后运行，对个股分析报告/待验证 文件夹中的待验证报告进行深度验证：
 1. 扫描所有待验证报告
 2. 获取真实 T+1 / T+2 收盘数据
 3. 计算预测命中率
@@ -28,7 +28,7 @@ from data.config_loader import cfg
 SCRIPT_DIR = Path(__file__).parent
 SKILL_DIR = SCRIPT_DIR.parent
 PENDING_DIR = Path.home() / "quant-data" / "市场分析" / "reports" / "个股分析报告"
-VALIDATIONS_DIR = PENDING_DIR / "validations"
+VALIDATIONS_DIR = PENDING_DIR / "已验证"
 DATA_ROOT = cfg.paths("stock_data_root")
 DAILY_DIR = DATA_ROOT / "daily"
 TRADE_CAL_PATH = cfg.paths("trade_cal_dir") / "trade_cal_all.csv"

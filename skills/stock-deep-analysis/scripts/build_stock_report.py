@@ -62,6 +62,12 @@ from decision.decision_engine import (
     build_validation_tracking as build_validation_tracking_impl,
     persist_pending_validation as persist_pending_validation_impl,
 )
+from decision.bull_agent import BullAgent, run_bull_agent
+from decision.bear_agent import BearAgent, run_bear_agent
+from decision.debater_agents import run_debaters, run_risk_debate
+from decision.judge import JudgeAgent, run_judge_agent, run_full_judgment
+from decision.portfolio_manager import DecisionManagerAgent, run_decision_manager_agent, format_decision_output
+from decision.signal_fusion import SignalFusion, run_signal_fusion
 from signals.core.analyze_auction_intent import analyze_auction_intent
 from analysis.market_analyzer import analyze_market_context as analyze_market_context_impl
 from runtime.news_runtime import (
@@ -616,6 +622,7 @@ def build_payload(
         "intraday_linkage": intraday_linkage,
         "fundamental_deep": fundamental_deep,
     }
+    
     payload["context_propagation"] = analyze_context_propagation(payload)
     payload["t_plus_two_bias"] = analyze_t_plus_two_bias(payload)
     payload["final_decision"] = build_final_decision(payload)
@@ -633,6 +640,102 @@ def build_payload(
         daily_row = {"close": None}
     payload["current_price"] = safe_float(daily_row.get("close")) if daily_row else None
     payload["portfolio"] = get_position_impl(full_symbol)
+    
+    # ── 决策层 ──────────────────────────────────────────
+    # 组装8个Agent结果供信号融合器使用
+    agent_results = {
+        "kline_sync": {"daily": kline_sync.get("daily", []), "moneyflow": kline_sync.get("moneyflow", [])},
+        "news": {"narrative_context": narrative_context},
+        "intraday": {"intraday": intraday},
+        "sector": {"sector_context": sector_context},
+        "stock_dims": {
+            "trend_structure": trend_structure,
+            "chip_structure": chip_structure,
+        },
+        "dragon_tiger": dragon_tiger_result,
+        "intraday_linkage": intraday_linkage,
+        "fundamental_deep": fundamental_deep,
+    }
+    
+    # 组装数据包供多空辩论Agent使用
+    data_bundle = {
+        "kline": {"daily": kline_sync.get("daily", [])},
+        "volume": {"moneyflow": kline_sync.get("moneyflow", [])},
+        "chip_structure": chip_structure,
+        "sector_context": sector_context,
+        "news_sentiment": news_sentiment,
+        "fundamental": fundamental,
+        "intraday": intraday,
+        "dragon_tiger": dragon_tiger_result,
+    }
+    
+    # 1. 信号融合器 - 汇总8个Agent信号
+    signal_fusion = SignalFusion()
+    fused_signals = signal_fusion.run(agent_results)
+    
+    # 2. 多空辩论Agent - 接收融合信号，构建看多/看空报告
+    bull_agent = BullAgent()
+    bull_report = bull_agent.run(fused_signals, data_bundle)
+    
+    bear_agent = BearAgent()
+    bear_report = bear_agent.run(fused_signals, data_bundle)
+    
+    # 3. 风险辩论
+    risk_debate = run_risk_debate(
+        risk_report={"score": 50},  # 基础风险评分
+        bull_report=bull_report,
+        bear_report=bear_report,
+    )
+    
+    # 4. 三个辩论Agent（激进/保守/中性）
+    debate_result = run_debaters(
+        bull_report=bull_report,
+        bear_report=bear_report,
+        risk_data={"score": 50},
+        context={
+            "news": news_sentiment,
+            "sector": sector_context,
+            "chips": chip_structure,
+            "fundamental": fundamental,
+        },
+    )
+    
+    # 5. 裁判Agent - 审查多空辩论报告
+    judge_agent = JudgeAgent()
+    judge_verdict = judge_agent.run(
+        bull_report=bull_report,
+        bear_report=bear_report,
+        debate_result=debate_result,
+        risk_debate=risk_debate,
+        signal_scores=fused_signals,  # 传入融合信号
+    )
+    
+    # 6. 决策经理Agent - 最终决策
+    position_context = {
+        "is_holding": bool(payload.get("portfolio")),
+        "current_price": payload.get("current_price", 0),
+        "cost_price": payload.get("portfolio", {}).get("cost_price", 0),
+    }
+    
+    decision_manager_agent = DecisionManagerAgent()
+    portfolio_decision = decision_manager_agent.run(
+        judge_verdict=judge_verdict,
+        bull_report=bull_report,
+        bear_report=bear_report,
+        signal_scores={"composite_score": 50},
+        position_context=position_context,
+    )
+    
+    # 决策层结果
+    payload["decision_layer"] = {
+        "fused_signals": fused_signals,
+        "bull_report": bull_report,
+        "bear_report": bear_report,
+        "debate_result": debate_result,
+        "risk_debate": risk_debate,
+        "judge_verdict": judge_verdict,
+        "portfolio_decision": portfolio_decision,
+    }
     
     # 历史对比
     payload["history_comparison"] = build_history_comparison(payload)

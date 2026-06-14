@@ -109,7 +109,7 @@ class TestBuildPayloadSmoke(unittest.TestCase):
         required_fields = [
             "symbol", "stock_name", "trade_date", "checkpoint",
             "market_context", "sector_context", "chip_structure",
-            "final_decision", "freshness",
+            "final_decision", "freshness", "decision_layer",
         ]
         for field in required_fields:
             self.assertIn(field, payload, f"Missing required field: {field}")
@@ -129,6 +129,14 @@ class TestBuildPayloadSmoke(unittest.TestCase):
         # dimension_results 存在且包含 peer_linkage
         dim = payload.get("dimension_results", {})
         self.assertIn("peer_linkage", dim)
+
+        # decision_layer 结构完整
+        dl = payload.get("decision_layer", {})
+        self.assertIn("fused_signals", dl)
+        self.assertIn("bull_report", dl)
+        self.assertIn("bear_report", dl)
+        self.assertIn("judge_verdict", dl)
+        self.assertIn("portfolio_decision", dl)
 
     def test_build_payload_returns_dict(self):
         """build_payload 返回值应为 dict 类型。"""

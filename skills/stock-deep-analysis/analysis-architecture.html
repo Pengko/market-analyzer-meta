@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, initial-scale=1.0">
+    <title>个股分析架构图</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
+            background: #0a0a0f;
+            color: #e8e8ed;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+            padding: 60px 40px;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 60px;
+        }
+
+        .header h1 {
+            font-size: 42px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #60a5fa, #a78bfa, #f472b6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 12px;
+            letter-spacing: -0.5px;
+        }
+
+        .header p {
+            font-size: 16px;
+            color: #6b7280;
+            letter-spacing: 2px;
+        }
+
+        /* Architecture Layout */
+        .architecture {
+            display: flex;
+            flex-direction: column;
+            gap: 40px;
+        }
+
+        /* Input Layer */
+        .input-layer {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            flex-wrap: wrap;
+        }
+
+        .input-box {
+            background: linear-gradient(135deg, #1e293b, #0f172a);
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 20px 28px;
+            min-width: 160px;
+            text-align: center;
+            position: relative;
+        }
+
+        .input-box::before {
+            content: '';
+            position: absolute;
+            top: -1px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 40px;
+            height: 3px;
+            background: linear-gradient(90deg, #60a5fa, #a78bfa);
+            border-radius: 2px;
+        }
+
+        .input-icon {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+
+        .input-label {
+            font-size: 13px;
+            color: #94a3b8;
+            font-weight: 500;
+        }
+
+        /* Arrow Down */
+        .arrow-down {
+            display: flex;
+            justify-content: center;
+            position: relative;
+        }
+
+        .arrow-down::before {
+            content: '';
+            width: 2px;
+            height: 40px;
+            background: linear-gradient(180deg, #475569, transparent);
+        }
+
+        .arrow-down::after {
+            content: '▼';
+            position: absolute;
+            bottom: -8px;
+            color: #475569;
+            font-size: 12px;
+        }
+
+        /* Main Processing Layer */
+        .processing-layer {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+        }
+
+        .agent-card {
+            background: linear-gradient(145deg, #111827, #030712);
+            border: 1px solid #1f2937;
+            border-radius: 16px;
+            padding: 24px;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .agent-card:hover {
+            border-color: #374151;
+            transform: translateY(-2px);
+        }
+
+        .agent-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .agent-badge {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 700;
+            color: white;
+        }
+
+        .badge-news { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+        .badge-intraday { background: linear-gradient(135deg, #10b981, #059669); }
+        .badge-sector { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+        .badge-dims { background: linear-gradient(135deg, #f59e0b, #d97706); }
+        .badge-dragon { background: linear-gradient(135deg, #ef4444, #dc2626); }
+        .badge-kline { background: linear-gradient(135deg, #06b6d4, #0891b2); }
+        .badge-linkage { background: linear-gradient(135deg, #ec4899, #db2777); }
+        .badge-fundamental { background: linear-gradient(135deg, #14b8a6, #0d9488); }
+
+        .agent-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: #f9fafb;
+        }
+
+        .agent-desc {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 2px;
+        }
+
+        /* Decision Card Specific */
+        .decision-card .agent-header {
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .decision-card .agent-name {
+            font-size: 13px;
+        }
+
+        .decision-card .agent-desc {
+            font-size: 10px;
+        }
+
+        .agent-content {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .data-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #9ca3af;
+            padding: 6px 10px;
+            background: #0f172a;
+            border-radius: 6px;
+        }
+
+        .data-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .dot-blue { background: #3b82f6; }
+        .dot-green { background: #10b981; }
+        .dot-purple { background: #8b5cf6; }
+        .dot-orange { background: #f59e0b; }
+        .dot-red { background: #ef4444; }
+        .dot-cyan { background: #06b6d4; }
+        .dot-pink { background: #ec4899; }
+        .dot-teal { background: #14b8a6; }
+
+        /* Output Layer */
+        .output-layer {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+
+        .output-box {
+            background: linear-gradient(135deg, #1e1b4b, #0f0a2e);
+            border: 1px solid #4338ca;
+            border-radius: 12px;
+            padding: 20px 32px;
+            min-width: 200px;
+            text-align: center;
+            position: relative;
+        }
+
+        .output-box::before {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 40px;
+            height: 3px;
+            background: linear-gradient(90deg, #818cf8, #c084fc);
+            border-radius: 2px;
+        }
+
+        .output-label {
+            font-size: 15px;
+            font-weight: 600;
+            color: #c4b5fd;
+            margin-bottom: 4px;
+        }
+
+        .output-desc {
+            font-size: 11px;
+            color: #6b7280;
+        }
+
+        /* Connection Lines */
+        .connections {
+            position: relative;
+            height: 60px;
+            margin: -20px 0;
+        }
+
+        .connection-line {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 2px;
+            height: 100%;
+            background: linear-gradient(180deg, #475569, #1f2937);
+        }
+
+        /* Tier Badge */
+        .tier-badge {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            font-size: 10px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+            background: #1f2937;
+            color: #9ca3af;
+        }
+
+        .tier-badge.completed {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+        }
+
+        .tier-badge.pending {
+            background: rgba(245, 158, 11, 0.2);
+            color: #f59e0b;
+        }
+
+        /* Legend */
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 32px;
+            margin-top: 40px;
+            padding-top: 40px;
+            border-top: 1px solid #1f2937;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #6b7280;
+        }
+
+        .legend-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        /* Flow Indicator */
+        .flow-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            margin: 40px 0;
+            color: #4b5563;
+            font-size: 13px;
+        }
+
+        .flow-line {
+            width: 100px;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #4b5563, transparent);
+        }
+
+        .flow-arrow {
+            font-size: 16px;
+            color: #6b7280;
+        }
+
+        /* Special Agent Card */
+        .agent-card.special {
+            border-color: #4338ca;
+            background: linear-gradient(145deg, #1e1b4b, #0f0a2e);
+        }
+
+        .agent-card.special:hover {
+            border-color: #6366f1;
+        }
+
+        /* Decision Layer */
+        .decision-layer {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 16px;
+            margin-top: 20px;
+        }
+
+        .decision-card {
+            background: linear-gradient(145deg, #1a1a2e, #0d0d1a);
+            border: 1px solid #e74c3c;
+            border-radius: 12px;
+            padding: 16px;
+            position: relative;
+        }
+
+        .decision-card::before {
+            content: '决策层';
+            position: absolute;
+            top: -10px;
+            left: 20px;
+            background: #e74c3c;
+            color: white;
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+
+        .decision-badge {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 700;
+            color: white;
+        }
+
+        .badge-fusion { background: linear-gradient(135deg, #e74c3c, #c0392b); }
+        .badge-debate { background: linear-gradient(135deg, #e67e22, #d35400); }
+        .badge-risk { background: linear-gradient(135deg, #9b59b6, #8e44ad); }
+        .badge-final { background: linear-gradient(135deg, #27ae60, #229954); }
+
+        .decision-content {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 10px;
+        }
+
+        .decision-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            color: #9ca3af;
+            padding: 5px 8px;
+            background: #0f172a;
+            border-radius: 6px;
+        }
+
+        .decision-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .dot-red { background: #e74c3c; }
+        .dot-orange { background: #e67e22; }
+        .dot-purple { background: #9b59b6; }
+        .dot-green { background: #27ae60; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>个股深度分析 · 架构图</h1>
+            <p>MARKET ANALYZER META · STOCK DEEP ANALYSIS</p>
+        </div>
+
+        <!-- Input Layer -->
+        <div class="input-layer">
+            <div class="input-box">
+                <div class="input-icon">📊</div>
+                <div class="input-label">股票代码</div>
+            </div>
+            <div class="input-box">
+                <div class="input-icon">📅</div>
+                <div class="input-label">交易日期</div>
+            </div>
+            <div class="input-box">
+                <div class="input-icon">⏰</div>
+                <div class="input-label">当前时段</div>
+            </div>
+            <div class="input-box">
+                <div class="input-icon">📰</div>
+                <div class="input-label">新闻数据</div>
+            </div>
+        </div>
+
+        <!-- Arrow -->
+        <div class="arrow-down"></div>
+
+        <!-- Flow Indicator -->
+        <div class="flow-indicator">
+            <span>并行执行</span>
+            <div class="flow-line"></div>
+            <span class="flow-arrow">→</span>
+            <span>8 个 Agent 同时分析</span>
+            <span class="flow-arrow">→</span>
+            <div class="flow-line"></div>
+            <span>信号融合 → 多空辩论 → 裁判 → 决策经理</span>
+        </div>
+
+        <!-- Main Processing Layer -->
+        <div class="processing-layer">
+            <!-- Agent A: K线同步 -->
+            <div class="agent-card completed">
+                <div class="tier-badge completed">Agent A ✓</div>
+                <div class="agent-header">
+                    <div class="agent-badge badge-kline">K</div>
+                    <div>
+                        <div class="agent-name">K线同步</div>
+                        <div class="agent-desc">K-line Sync</div>
+                    </div>
+                </div>
+                <div class="agent-content">
+                    <div class="data-item">
+                        <span class="data-dot dot-cyan"></span>
+                        <span>日K线数据同步 ✓</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-dot dot-cyan"></span>
+                        <span>本地因子重建 ✓</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-dot dot-cyan"></span>
+                        <span>技术指标计算 ✓</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Agent B: 消息面 -->
+            <div class="agent-card completed">
+                <div class="tier-badge completed">Agent B ✓</div>
+                <div class="agent-header">
+                    <div class="agent-badge badge-news">N</div>
+                    <div>
+                        <div class="agent-name">消息面分析</div>
+                        <div class="agent-desc">News Analysis</div>
+                    </div>
+                </div>
+                <div class="agent-content">
+                    <div class="data-item">
+                        <span class="data-dot dot-blue"></span>
+                        <span>TrendRadar MCP ✓</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-dot dot-blue"></span>
+                        <span>新闻情感分析 ✓</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-dot dot-blue"></span>
+                        <span>事件驱动识别 ✓</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Agent C: 分钟线 -->
+            <div class="agent-card completed">
+                <div class="tier-badge completed">Agent C ✓</div>
+                <div class="agent-header">
+                    <div class="agent-badge badge-intraday">I</div>
+                    <div>
+                        <div class="agent-name">分钟线获取</div>
+                        <div class="agent-desc">Intraday Data</div>
+                    </div>
+                </div>
+                <div class="agent-content">
+                    <div class="data-item">
+                        <span class="data-dot dot-green"></span>
+                        <span>本地分钟数据 ✓</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-dot dot-green"></span>
+                        <span>浏览器补全 ✓</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-dot dot-green"></span>
+                        <span>分时走势 ✓</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Agent D: 大盘+板块 -->
+            <div class="agent-card completed">
+                <div class="tier-badge completed">Agent D ✓</div>
+                <div class="agent-header">
+                    <div class="agent-badge badge-sector">S</div>
+                    <div>
+                        <div class="agent-name">大盘+板块</div>
+                        <div class="agent-desc">Market & Sector</div>
+                    </div>
+                </div>
+                <div class="agent-content">
+                    <div class="data-item">
+                        <span class="data-dot dot-purple"></span>
+                        <span>大盘情绪分析 ✓</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-dot dot-purple"></span>
+                        <span>板块轮动追踪 ✓</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-dot dot-purple"></span>
+                        <span>题材热度评估 ✓</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Agent E: 个股维度 -->
+            <div class="agent-card special">
+                <div class="tier-badge completed">Agent E ✓</div>
+                <div class="agent-header">
+                    <div class="agent-badge badge-dims">D</div>
+                    <div>
+                        <div class="agent-name">个股维度</div>
+                        <div class="agent-desc">Stock Dimensions</div>
+                    </div>
+                </div>
+                <div class="agent-content">
+                    <div class="data-item">
+                        <span class="data-dot dot-orange"></span>
+                        <span>量比 · 内外盘 ✓</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-dot dot-orange"></span>
+                        <span>资金流向 ✓</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-dot dot-orange"></span>
+                        <span>趋势 · 筹码 · 波动率 ✓</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-dot dot-orange"></span>
+                        <span>融资融券 · 竞价 ✓</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Agent F: 龙虎榜 -->
+            <div class="agent-card completed">
+                <div class="tier-badge completed">Agent F ✓</div>
+                <div class="agent-header">
+                    <div class="agent-badge badge-dragon">D</div>
+                    <div>
+                        <div class="agent-name">龙虎榜</div>
+                        <div class="agent-desc">Dragon Tiger</div>
+                    </div>
+                </div>
+                <div class="agent-content">
+                    <div class="data-item">
+                        <span class="data-dot dot-red"></span>
+                        <span>席位追踪 ✓</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-dot dot-red"></span>
+                        <span>游资动向 ✓</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-dot dot-red"></span>
+                        <span>机构资金 ✓</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Agent G: 分时联动 -->
+            <div class="agent-card completed">
+                <div class="tier-badge completed">Agent G ✓</div>
+                <div class="agent-header">
+                    <div class="agent-badge badge-linkage">L</div>
+                    <div>
+                        <div class="agent-name">分时联动</div>
+                        <div class="agent-desc">Intraday Linkage</div>
+                    </div>
+                </div>
+                <div class="agent-content">
+                    <div class="data-item">
+                        <span class="data-dot dot-pink"></span>
+                        <span>分时联动分析 ✓</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-dot dot-pink"></span>
+                        <span>板块共振识别 ✓</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-dot dot-pink"></span>
+                        <span>资金共振 ✓</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Agent H: 基本面 -->
+            <div class="agent-card special">
+                <div class="tier-badge completed">Agent H ✓</div>
+                <div class="agent-header">
+                    <div class="agent-badge badge-fundamental">F</div>
+                    <div>
+                        <div class="agent-name">基本面深度</div>
+                        <div class="agent-desc">Fundamental Analysis</div>
+                    </div>
+                </div>
+                <div class="agent-content">
+                    <div class="data-item">
+                        <span class="data-dot dot-teal"></span>
+                        <span>Tier 1-5 财务数据 ✓</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-dot dot-teal"></span>
+                        <span>背调：质押/解禁/回购 ✓</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="data-dot dot-teal"></span>
+                        <span>Tier 6 风险搜索 ✓</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Arrow -->
+        <div class="arrow-down"></div>
+
+        <!-- Flow Indicator -->
+        <div class="flow-indicator">
+            <span>8 Agent 结果</span>
+            <div class="flow-line"></div>
+            <span class="flow-arrow">→</span>
+            <span>信号融合</span>
+            <span class="flow-arrow">→</span>
+            <span>多空辩论</span>
+            <span class="flow-arrow">→</span>
+            <span>裁判</span>
+            <span class="flow-arrow">→</span>
+            <span>风险辩论</span>
+            <span class="flow-arrow">→</span>
+            <span>决策经理</span>
+            <div class="flow-line"></div>
+        </div>
+
+        <!-- Decision Layer -->
+        <div class="decision-layer">
+            <!-- 信号融合器 -->
+            <div class="decision-card">
+                <div class="tier-badge pending">待开发</div>
+                <div class="agent-header">
+                    <div class="decision-badge badge-fusion">F</div>
+                    <div>
+                        <div class="agent-name">信号融合器</div>
+                        <div class="agent-desc">Signal Fusion</div>
+                    </div>
+                </div>
+                <div class="decision-content">
+                    <div class="decision-item">
+                        <span class="decision-dot dot-red"></span>
+                        <span>汇总 8 个 Agent 信号</span>
+                    </div>
+                    <div class="decision-item">
+                        <span class="decision-dot dot-red"></span>
+                        <span>计算综合评分</span>
+                    </div>
+                    <div class="decision-item">
+                        <span class="decision-dot dot-red"></span>
+                        <span>输出融合信号</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 多空辩论 -->
+            <div class="decision-card" style="border-color: #e67e22;">
+                <div class="tier-badge pending">待开发</div>
+                <div class="agent-header">
+                    <div class="decision-badge badge-debate">D</div>
+                    <div>
+                        <div class="agent-name">多空辩论</div>
+                        <div class="agent-desc">Bull/Bear Debate</div>
+                    </div>
+                </div>
+                <div class="decision-content">
+                    <div class="decision-item">
+                        <span class="decision-dot dot-orange"></span>
+                        <span>看多Agent：为什么涨？</span>
+                    </div>
+                    <div class="decision-item">
+                        <span class="decision-dot dot-orange"></span>
+                        <span>看空Agent：为什么跌？</span>
+                    </div>
+                    <div class="decision-item">
+                        <span class="decision-dot dot-orange"></span>
+                        <span>方向判断：涨/跌/震荡</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 裁判 -->
+            <div class="decision-card" style="border-color: #9b59b6;">
+                <div class="tier-badge pending">待开发</div>
+                <div class="agent-header">
+                    <div class="decision-badge badge-risk">J</div>
+                    <div>
+                        <div class="agent-name">裁判</div>
+                        <div class="agent-desc">Judge</div>
+                    </div>
+                </div>
+                <div class="decision-content">
+                    <div class="decision-item">
+                        <span class="decision-dot dot-purple"></span>
+                        <span>审查看多/看空报告</span>
+                    </div>
+                    <div class="decision-item">
+                        <span class="decision-dot dot-purple"></span>
+                        <span>综合方向判断</span>
+                    </div>
+                    <div class="decision-item">
+                        <span class="decision-dot dot-purple"></span>
+                        <span>产出裁决</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 风险辩论 -->
+            <div class="decision-card" style="border-color: #f39c12;">
+                <div class="tier-badge pending">待开发</div>
+                <div class="agent-header">
+                    <div class="decision-badge" style="background: linear-gradient(135deg, #f39c12, #e67e22);">R</div>
+                    <div>
+                        <div class="agent-name">风险辩论</div>
+                        <div class="agent-desc">Risk Debate</div>
+                    </div>
+                </div>
+                <div class="decision-content">
+                    <div class="decision-item">
+                        <span class="decision-dot" style="background: #f39c12;"></span>
+                        <span>激进派：可承受高风险</span>
+                    </div>
+                    <div class="decision-item">
+                        <span class="decision-dot" style="background: #f39c12;"></span>
+                        <span>保守派：需控制风险</span>
+                    </div>
+                    <div class="decision-item">
+                        <span class="decision-dot" style="background: #f39c12;"></span>
+                        <span>中性派：平衡建议</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 决策经理 -->
+            <div class="decision-card" style="border-color: #27ae60;">
+                <div class="tier-badge pending">待开发</div>
+                <div class="agent-header">
+                    <div class="decision-badge badge-final">M</div>
+                    <div>
+                        <div class="agent-name">决策经理</div>
+                        <div class="agent-desc">Decision Manager</div>
+                    </div>
+                </div>
+                <div class="decision-content">
+                    <div class="decision-item">
+                        <span class="decision-dot dot-green"></span>
+                        <span>综合裁决+风险偏好</span>
+                    </div>
+                    <div class="decision-item">
+                        <span class="decision-dot dot-green"></span>
+                        <span>买入/持有/卖出</span>
+                    </div>
+                    <div class="decision-item">
+                        <span class="decision-dot dot-green"></span>
+                        <span>止损/止盈/仓位</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Arrow -->
+        <div class="arrow-down"></div>
+
+        <!-- Flow Indicator -->
+        <div class="flow-indicator">
+            <span>决策输出</span>
+            <div class="flow-line"></div>
+            <span class="flow-arrow">→</span>
+            <span>信号评分 + 分析报告 + 决策建议 + 风险预警</span>
+            <div class="flow-line"></div>
+        </div>
+
+        <!-- Output Layer -->
+        <div class="output-layer">
+            <div class="output-box">
+                <div class="output-label">信号评分</div>
+                <div class="output-desc">次日隔夜强弱评估</div>
+            </div>
+            <div class="output-box">
+                <div class="output-label">分析报告</div>
+                <div class="output-desc">Markdown + Parquet</div>
+            </div>
+            <div class="output-box">
+                <div class="output-label">决策建议</div>
+                <div class="output-desc">买入/持有/卖出</div>
+            </div>
+            <div class="output-box">
+                <div class="output-label">风险预警</div>
+                <div class="output-desc">背调 + 风险搜索</div>
+            </div>
+        </div>
+
+        <!-- Legend -->
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #10b981;"></div>
+                <span>✓ 已完成</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #f59e0b;"></div>
+                <span>待开发</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #3b82f6;"></div>
+                <span>消息面数据</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #10b981;"></div>
+                <span>分钟线数据</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #8b5cf6;"></div>
+                <span>板块数据</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #f59e0b;"></div>
+                <span>个股维度</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #ef4444;"></div>
+                <span>龙虎榜数据</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #14b8a6;"></div>
+                <span>基本面数据</span>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

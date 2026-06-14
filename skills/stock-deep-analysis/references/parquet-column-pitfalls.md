@@ -95,9 +95,93 @@ print(f"Price: {price}")
 
 ---
 
+### 陷阱 4：stk_factor_pro 列名带 `_bfq` 后缀
+
+**问题**：常见代码试图读取 `ma5`、`ma10`、`ma20`、`ma30`、`rsi_6`、`rsi_12` 等列名，但这些列在 parquet 中不存在。
+
+**实际列名**：`stk_factor_pro/{code}.parquet` 中均线和 RSI 字段均带 `_bfq` 后缀：
+
+| 常见错误列名 | 实际列名 | 说明 |
+|-------------|---------|------|
+| `ma5` | `ma_bfq_5` | 5日均线（不复权） |
+| `ma10` | `ma_bfq_10` | 10日均线 |
+| `ma20` | `ma_bfq_20` | 20日均线 |
+| `ma30` | `ma_bfq_30` | 30日均线 |
+| `rsi_6` | `rsi_bfq_6` | 6日RSI |
+| `rsi_12` | `rsi_bfq_12` | 12日RSI |
+| `kdj_j_bfq` | `kdj_bfq` | KDJ J值（已在陷阱1记录） |
+
+**正确读取方式**：
+```python
+import pyarrow.parquet as pq
+
+factor = pq.read_table(f'{root}/stk_factor_pro/{code}.parquet').to_pandas()
+factor = factor.sort_values('trade_date')
+# 可用均线列：ma_bfq_5, ma_bfq_10, ma_bfq_20, ma_bfq_30, ma_bfq_60, ma_bfq_90, ma_bfq_250
+# 可用RSI列：rsi_bfq_6, rsi_bfq_12, rsi_bfq_24
+# KDJ列：kdj_k_bfq, kdj_d_bfq, kdj_bfq (J值)
+```
+
+---
+
+### 陷阱 5：parquet 文件名带交易所后缀（.SH / .SZ）
+
+**问题**：用 `{code}.parquet`（如 `600703.parquet`）读取文件会 FileNotFoundError。
+
+**实际文件名**：`{code}.{exchange}.parquet`，如 `600703.SH.parquet`、`000725.SZ.parquet`。
+
+**正确路径**：
+```python
+# ❌ 错误（FileNotFoundError）
+path = f'{root}/daily/600703.parquet'
+
+# ✅ 正确
+path = f'{root}/daily/600703.SH.parquet'
+# 通用写法
+path = f'{root}/daily/{ts_code}.parquet'  # ts_code 已包含 .SH/.SZ
+```
+
+**适用范围**：所有以 `{code}` 为键的 parquet 目录（daily、stk_factor_pro、moneyflow、cyq_perf、margin_detail 等）均使用带交易所后缀的文件名。
+
+---
+
+### 陷阱 6：概念成分表是年度合并文件，不是按股票拆分
+
+**问题**：尝试读取 `dc_concept_cons/600703.SH.parquet` 会 FileNotFoundError。
+
+**实际结构**：概念成分表按年份存储，一个文件包含该年度所有股票的概念归属。
+
+```
+theme_data/
+├── dc_concept_cons/
+│   ├── 2026.parquet        # 2026年全部概念成分（含所有股票）
+│   └── 2025.parquet
+├── kpl_concept_cons/
+│   ├── 2026.parquet
+│   └── 2025.parquet
+└── dc_concept/
+    └── 2026.parquet        # 概念列表（不含成分股）
+```
+
+**正确读取方式**：
+```python
+import pyarrow.parquet as pq
+
+# 读取年度文件，再按 ts_code 过滤
+dc = pq.read_table(f'{root}/theme_data/dc_concept_cons/2026.parquet').to_pandas()
+sanan_dc = dc[dc['ts_code'] == '600703.SH']
+
+# dc_concept_cons 列名：ts_code, trade_date, name, theme_code, industry_code, industry, reason, hot_num
+# kpl_concept_cons 列名：ts_code, name, con_name, con_code, trade_date, desc, hot_num
+```
+
+---
+
 ### 处理原则
 
 1. **先检查列名**：读取 parquet 前，先用 `df.columns.tolist()` 确认实际列名
 2. **禁止硬编码**：禁止凭记忆硬编码列名，尤其是 `_bfq` / `_afq` 后缀和 `date` / `trade_date` 差异
 3. **单位分离**：当需要与 quick_analyze 输出对比时，先确认两方字段的映射关系和单位是否一致
 4. **字段映射表**：每次新增数据源时，在本文档更新映射表，确保后续 agent 可查
+5. **文件名带交易所后缀**：parquet 文件名必须包含 `.SH` / `.SZ`，不能只用纯数字代码
+6. **概念成分表按年存储**：读取时先加载年度文件，再按 `ts_code` 过滤目标股票

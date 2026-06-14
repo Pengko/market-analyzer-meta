@@ -56,13 +56,33 @@ Returns: company name, industry, chairman, employees, main business, org_profile
 - `RPT_F10_FN_*` — financial reports (report names are unreliable, API returns "报表配置不存在")
 - Fallback: browser navigate to individual F10 pages
 
-### 4. Output Format for Fundamental Research
+### 4. 背调（风险尽职调查）
 
-Standard 3-dimension structure:
+基本面分析**必须**附加风险背调，不能只看业务逻辑不查风险。详细方法论见 `references/background-due-diligence.md`。
+
+**必查8大维度**：
+1. 诉讼与仲裁 — 未决诉讼金额/核心资产纠纷/集体诉讼
+2. 监管处罚 — 近3年行政处罚/问询函/立案调查
+3. 大股东风险 — 质押比例/减持计划/实控人状态
+4. 关联交易 — 金额占比/定价公允性/虚增收入嫌疑
+5. 财务异常 — 审计意见/现金流/应收/存货/商誉
+6. 信息披露 — 违规记录/业绩修正/重大事项披露
+7. 环保安全 — 处罚/事故/政策风险
+8. 舆情口碑 — 负面舆情/暴雷传闻
+
+**5分钟快速背调**（时间有限时）：
+1. 审计意见 → 非标=直接标红
+2. 大股东质押 → >50%标黄，>70%标红
+3. 诉讼处罚 → 近3年行政处罚+重大诉讼
+4. 商誉减值 → 商誉/净资产>30%标黄
+
+### 5. Output Format for Fundamental Research
+
+Standard 4-dimension structure (背调为必选维度):
 
 ```
 ## {公司名} ({代码}) 深度分析
-**产品技术壁垒 · 业务增量前景 · 客户份额**
+**产品技术壁垒 · 业务增量前景 · 客户份额 · 风险背调**
 
 ### 一、产品技术壁垒
 - Product matrix table (产品线 / 产线规模 / 技术壁垒 / 盈利能力)
@@ -79,7 +99,12 @@ Standard 3-dimension structure:
 - Competitive landscape comparison table
 - Market share estimates by segment
 
-### 四、综合判断
+### 四、风险背调（必选）
+- 8大维度背调表格（诉讼/监管/质押/关联交易/财务/信披/环保/舆情）
+- 综合风险评级
+- 核心风险点
+
+### 五、综合判断
 - Conclusion table (维度 / 判断 / 置信度)
 - Key risks
 - Turning point signals to watch

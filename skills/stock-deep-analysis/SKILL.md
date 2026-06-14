@@ -7,7 +7,7 @@ description: 面向A股个股研究的结构化深度分析技能。当用户要
 围绕单只 A 股完成一份偏交易决策的深度分析，而不是泛泛点评。分析必须从市场环境开始，逐层落到板块、个股趋势、分时主力、筹码结构、技术因子和消息面，最后给出下一交易日和后续几日的预期，并判断当天是否适合入手。
 ## 分析原则
 
-- **当用户要求基本面/业务分析**（产品技术壁垒、业务增量前景、客户份额等，非交易信号），**不要运行**完整的 build_payload/quick_analyze 流水线。改用 `references/fundamental-research-patterns.md` 中的模式——通过 delegate_task + 浏览器采集 F10 数据，输出 3 维度结构化报告。
+- **当用户要求基本面/业务分析**（产品技术壁垒、业务增量前景、客户份额等，非交易信号），**不要运行**完整的 build_payload/quick_analyze 流水线。改用 `references/fundamental-research-patterns.md` 中的模式——通过 delegate_task + 浏览器采集 F10 数据，输出 4 维度结构化报告（产品技术壁垒 + 业务增量前景 + 客户份额 + **风险背调**）。背调方法论详见 `references/background-due-diligence.md`。
 
 - 先确认标的，再确认市场与代码格式，避免同名股票误判。
 - 分析前必须先确认当前中国时间；优先获取中国网络时间，失败时再退回本地时间。
@@ -23,8 +23,11 @@ description: 面向A股个股研究的结构化深度分析技能。当用户要
 - 输出必须有结论，但不能掩盖不确定性；必须写明多空判断依据。
 - 输出时必须明确标注时间来源，以及每类关键数据来自本地还是网络渠道。
 - 输出默认必须使用本技能规定的固定曝光格式；除非用户明确要求别的结构，否则不能自由发挥到把关键模块写丢。
+- **资金流向分析是强制模块（2026-06-12 实战教训）**：遗漏资金流导致将"超大单主导涨停"误判为"散户追高被套"，结论方向性错误。必须通过东方财富API（`push2.eastmoney.com/api/qt/stock/fflow/kline/get`）获取当日分时资金流，做分时段增量分析（冲高/炸板/震荡/午前各段），区分超大单(>500万)和大单(100-500万)的行为差异，并与近5日每日资金流做趋势对比。详见 `references/moneyflow-analysis-framework.md`。
+- **拆单识别（高级资金流分析）**：当发现中单异常放大、笔均手数偏低、或东方财富超大单+大单净卖而中单净买时，必须启动拆单识别分析。通过东方财富tick data API获取分笔成交数据，计算笔均手数、中单占比、分时段拆单强度，判断主力是否将大单拆成中单执行。注意：同花顺资金流页面无「暗盘/明盘」字段，该概念是通过跨源口径差异推算的分析框架，不是 API 原生输出。详见 `references/split-order-detection.md`。
 - `对标股联动` 是强制模块，不是可选模块；若缺失该模块，视为本技能输出不合格。
-- 若对标股数据缺失，必须单独写出“对标股数据缺失/降级说明”，不能直接省略对标股部分。
+- 若对标股数据缺失，必须单独写出"对标股数据缺失/降级说明"，不能直接省略对标股部分。
+- **跨板块相关性分析**：当个股属于多个概念板块时（如三安光电同时属于LED和先进封装），默认做分时相关性分析判断当日走势实际跟随哪个板块。详见 `references/cross-sector-correlation-analysis.md`。
 - 当任务需覌"抓新闻、补正文、复用登录态、归一化消息"时，通过 `trendradar-mcp` 获取原始新闻数据，由本技能内置的 `_trendradar_to_news_sentiment()` 进行归一化处理。当 TrendRadar 两阶段筛选均为 0 条时，自动 fallback 到 `fetch_browser_news.py`（market-news-intelligence 技能的抓取脚本）补充抓取。
 - 若 `portfolio.yaml` 中该股票有持仓（`hold > 0`），自动按 `持有中` 视角分析，无需用户主动提供
 - 若用户没有主动提供成本价、仓位、已持有状态，且 `portfolio.yaml` 中也无该股票持仓，默认按 `未持有` 视角分析，不要擅自切到持仓去留模式
@@ -77,14 +80,30 @@ description: 面向A股个股研究的结构化深度分析技能。当用户要
 - 若 pyarrow 也不可用，降级至 `python3 -c "import pyarrow.parquet as pq"` 先验证
 - 所有降级操作必须在报告中标注 `因 quick_analyze.py 依赖缺失，已降级为直接 API + pyarrow 读取`
 
+#### 零本地数据时的纯API分析路径
+
+当目标股票在本地仓库**完全无数据文件**（cyq_perf、stk_factor_pro、moneyflow、margin_detail 全部 missing）时，不使用 pandas/pyarrow 降级路径（因为没有文件可读）。改为纯 API 路径：
+
+1. **实时行情**：腾讯 API `qt.gtimg.cn/q=sz/sh{code}`（GB2312编码，`~`分隔字段）
+2. **日K线120天**：腾讯 API `web.ifzq.gtimg.cn/appstock/app/fqkline/get`（注意键名是 `day` 不是 `qfqday`）
+3. **5分钟/60分钟K线**：新浪 API `money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData`
+4. **手动计算技术指标**：从日K线收盘价数组计算 MA/EMA/MACD/RSI/BOLL（无本地因子库）
+5. **板块对标**：跳过本地概念成分表，基于行业知识手动选3-5只 peers，用腾讯API批量获取
+6. **新闻**：TrendRadar MCP 搜索，可能返回空（部分小盘股无覆盖）
+
+完整代码模板和注意事项详见 `references/api-only-analysis-workflow.md`。
+
+**关键坑点**：腾讯日K线返回JSON的键名是 `day`（即使请求参数写 `qfqday`）；新浪5分钟K线含跨日数据需过滤；TrendRadar对部分股票4次不同关键词搜索均可能返回0条。
+
 ## 固定执行顺序
 
 除非用户明确只要某一个局部结论，否则默认按下面顺序执行，不要跳步：
 
 1. 先做数据新鲜度强制前置检查
    - 正式分析前必须先执行：
-     - `python3 "/Users/penghongming/agent-skills/custom/stock-deep-analysis/scripts/check_data_freshness.py" --symbol {SYMBOL} --trade-date {DATE}`
-   - **已知 bug：该脚本对 `YYYYMMDD` 格式可能解析失败（`ValueError: unconverted data remains: :00`）。若遇此错误，回退至直接 `ls` 目录扫描 + 腾讯 API 验证时效性，详见 `references/environment-fallback-playbook.md` 第 7 节**
+     - `python3 "/Users/penghongming/agent-skills/custom/market-analyzer-meta/skills/stock-deep-analysis/scripts/check_data_freshness.py" --symbol {SYMBOL} --trade-date {DATE}`
+   - **已知 bug 1：该脚本对 `YYYYMMDD` 格式可能解析失败（`ValueError: unconverted data remains: :00`）。若遇此错误，回退至直接 `ls` 目录扫描 + 腾讯 API 验证时效性，详见 `references/environment-fallback-playbook.md` 第 7 节**
+   - **已知 bug 2：系统 Python 3.9 不支持 `Path | None` 语法（需 3.10+），脚本会报 `TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'`。遇此错误直接跳过该脚本，改用 `ls` 扫描 + 腾讯 API 验证，详见 `references/environment-fallback-playbook.md` 第 8 节**
    - **本地数据资产清单参考**：`~/agent-skills/custom/stock-deep-analysis/references/data-inventory.md`，包含各类数据的本地存储路径、当前可用状态、降级策略速查表。不可依赖记忆判断数据存在性，必须脚本扫描确认。
    - 若核心维度为 `missing/invalid`：暂停结论输出，先补数据
    - 若核心维度为 `stale`：允许降级继续，但必须在结论区写明 `数据可能延迟`
@@ -105,7 +124,8 @@ description: 面向A股个股研究的结构化深度分析技能。当用户要
    - 日线结构、分时结构、关键价位、量价关系
 7. 再做技术因子复核
    - 均线、趋势、动量、波动率、超买超卖
-8. 再补资金、筹码、消息面
+- 再补资金流、筹码、消息面
+   - **资金流分析为强制模块（2026-06-12 实战教训）**：必须通过东方财富API获取当日分时资金流（超大单/大单/中单/小单），做分时段增量分析，区分"超大单主导"与"散户追高"。详见 `references/moneyflow-analysis-framework.md`
    - 资金承接、筹码位置、公告与催化
 9. 最后给交易结论
    - 当前判断、剩余时段或次日预期、风险位、失效条件
@@ -189,6 +209,7 @@ python3 "/Users/penghongming/agent-skills/custom/stock-deep-analysis/scripts/bui
 - 待验证文件命名必须显式带 `待验证`，统一写入：`references/pending-validations/<trade_date>/待验证-<symbol>.md`
 - 验证完成后，原待验证文件必须移动到：`references/validations/<trade_date>/已验证-<symbol>.md`
 - `references/` 根目录不允许再直接落待验证个股报告；根目录只保留说明文档、测试方案、框架文档、项目状态
+- **报告缺失时的回滚验证**：当用户要求"对比X号的报告做验证"但报告文件不存在时（未保存、路径错误、已被清理），不要直接放弃。使用 `report-rollback-verification` 技能中的"重建验证法"——基于基准日数据模拟分析推演，再对比实际走势。详见该技能的"报告缺失时的重建验证"章节。
 
 最新交易日判定规则：
 
@@ -252,6 +273,22 @@ python3 "/Users/penghongming/agent-skills/custom/stock-deep-analysis/scripts/bui
 - 必须在报告中明确写明时间来源
 
 时段划分：盘前（<09:30）、上午盘中（09:30-11:30）、午间休盘（11:30-13:00）、下午盘中（13:00-15:00）、盘后（>15:00）
+
+#### 分析过程中时间漂移的处理（2026-06-11 实战教训）
+
+复杂深度分析需要大量串行工具调用（数据新鲜度检查 → 大盘 → 板块 → 个股 → 技术因子 → 资金筹码 → 消息面），整个流程可能耗时 30-60 分钟。在此期间，市场时段可能已经切换（例如：从午间休盘开始分析，完成时已是盘后）。
+
+**强制规则：**
+1. **记录起始时间**：分析开始时记录当前时间，作为初始时段判断依据
+2. **阶段间重检时间**：每完成一个主要阶段（大盘/板块/个股），快速重检当前时间
+3. **时段切换时重新定 scope**：如果时间已从一个时段跨越到另一个时段（如午间→盘后），必须按新时段的分支规则重新调整分析口径，不能沿用旧时段的分析范围
+4. **最终输出用当前时间**：报告中的时段判断、可分析内容、推演范围，一律以最终输出时的实际时段为准
+5. **禁止"半途而废"式输出**：如果分析开始时是午间休盘，但完成时已盘后，不能输出一份"午间分析"——必须切换为盘后复盘口径
+
+**典型场景：**
+- 午间休盘(11:30)开始 → 盘后(15:00+)完成：切换为盘后复盘，可包含收盘集合竞价、完整分时回顾、次日预期
+- 盘前(08:00)开始 → 盘中(10:00+)完成：切换为盘中实时分析，以实时数据为主
+- 上午盘中(10:00)开始 → 午间休盘完成：保持午间分析口径，仅推演下午
 
 ## 时段分支规则
 
@@ -401,17 +438,48 @@ python3 "/Users/penghongming/agent-skills/custom/stock-deep-analysis/scripts/bui
 - 它们的今日涨跌幅；若拿不到今日涨跌幅，则至少列最近一个完整交易日涨跌幅，并明确这是降级结果
 
 
-必须先看大周期，再看中周期，再看短周期：
+### Step 5.5: 大周期趋势定位（月线/周线 — 强制模块，不可跳过）
 
-- 月线：
-  - 是否处于大级别底部、突破、主升、高位震荡或退潮
-- 周线：
-  - 趋势是否完整，均线与量能是否支持
-  - 是否处于周线级别突破、背离、加速或见顶结构
-- 日线：
+**T+1市场铁律提醒**：A股实行T+1交收，日内分时分析只能辅助短线博弈，真正的趋势判断必须建立在周线/月线级别之上。用户往往只问"今天怎么看"，但最终决策需要多时间框架共识。默认将月线/周线分析作为标准输出的一部分，不等用户追问。
+
+- **月线**（数据获取：优先读本地 `monthly/{code}.parquet`；本地缺失时用新浪API `scale=7200`）：
+  - 是否处于大级别底部（月线连阴缩量、地量见地价）、突破（放量站上月MA3/月MA6）、主升、高位震荡或退潮
+  - 月线均线排列：月MA3、月MA6、月MA12 的相对位置
+  - 月线量价关系：最近几个月是否缩量/放量，与价格方向是否匹配
+  - 关键转折点：最近3-6个月的月线大阴/大阳对应的市场事件
+  - 月线级别结论：趋势方向（上升/下降/横盘震荡）+ 当前所处阶段
+
+- **周线**（数据获取：优先读本地 `weekly/{code}.parquet`；本地缺失时用新浪API `scale=1200`）：
+  - 趋势是否完整，周线均线（周MA5/周MA10/周MA20）与量能是否支持
+  - 是否处于周线级别突破（突破周线平台上沿）、背离（价格新高但指标未新高）、加速或见顶结构
+  - 周线量价关系：周成交额趋势
+  - 周线结论：中线趋势方向 + 当前所处阶段 + 周线级别支撑压力位
+
+- **日线**（已在 Step 5 分析）：
   - 今天的位置是启动、分歧、加速、衰竭还是止跌反抽
   - 量价是否匹配
   - 今天收盘结构强不强
+
+- **多时间框架共振判断**：
+  - 月线向上 + 周线向上 + 日线向上 = 三重共振，最强做多信号
+  - 月线向上 + 周线调整 + 日线反弹 = 中期趋势仍好，反弹可参与但需防周线回调
+  - 月线向下 + 周线反弹 + 日线强势 = 超跌反弹，参与需快进快出
+  - 月线向下 + 周线向下 + 日线反弹 = 均为反抽，不建议重仓
+  - 输出时必须写明当前属于哪种共振组合
+
+#### 新浪财经周线/月线K线API
+
+与5分钟K线使用同一端点，仅 `scale` 参数不同：
+
+```bash
+# 周K线（scale=1200，返回约30-50周数据）
+curl -s "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=sz002583&scale=1200&ma=no&datalen=40"
+
+# 月K线（scale=7200，返回约30-36个月数据）
+curl -s "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=sz002583&scale=7200&ma=no&datalen=36"
+```
+
+**返回格式**：与5分钟K线相同，JSON数组含 `day/open/high/low/close/volume` 字段。注意 volume 单位为**股**（非手）。
 
 ### Step 6: 用实时分钟数据分析当日主力意图
 
@@ -726,6 +794,52 @@ python3 "/Users/penghongming/agent-skills/custom/stock-deep-analysis/scripts/det
   - `MA30` 视为更弱情况下的重要防守位
 - 输出支撑位和压力位时，不要只写静态前高前低；如果均线位置接近现价，必须把对应均线一并写入。
 
+#### 缺口分析（2026-06-12 实战教训 — 强制模块）
+
+**用户明确纠正：缺口支撑是技术分析的基本要素，遗漏属于分析缺陷。**
+
+缺口（跳空缺口）是日K线中相邻两根K线之间无成交重叠的价格区间，代表多空力量的突变。**在技术分析中必须与均线并列作为标准支撑/压力判断依据，不可遗漏。**
+
+**执行要求：**
+1. **扫描日K线中的所有缺口**：用相邻两日的 high/low 比较识别
+   - 向上缺口：今日最低 > 昨日最高 → 缺口区间 = [昨日最高, 今日最低]
+   - 向下缺口：今日最高 < 昨日最低 → 缺口区间 = [今日最高, 昨日最低]
+2. **判断缺口状态**：已回补 vs 未回补
+   - 向上缺口未回补 = 有效支撑（多头防线）
+   - 向下缺口未回补 = 有效压力（空头防线）
+3. **重点关注近30个交易日内的缺口**，尤其是：
+   - 涨停/跌停缺口（一字板后跳空）—— 代表主力资金的强意愿
+   - 连续涨停后的缺口 —— 多头成本区，跌破则反弹失败
+   - 跳空跌停缺口 —— 恐慌性抛压，短期难以收复
+4. **缺口对峙格局识别**：当股价处于两个未回补缺口之间时（上方压力缺口+下方支撑缺口），明确画出"夹心"结构
+5. **缺口作为入场决策依据**：
+   - 守住支撑缺口 → 可轻仓试探，止损设在缺口下沿
+   - 跌破支撑缺口 → 反弹失败，禁止入场
+   - 缺口附近的量价关系（缩量守住=强，放量刺入=弱）
+
+**代码获取方式**：
+```python
+# 新浪日K线(scale=240, 注意不是5分钟的scale=5)
+url = f'http://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol={code}&scale=240&ma=no&datalen=120'
+# 遍历相邻两日 high/low 识别缺口
+```
+
+**⚠️ API scale 参数陷阱**：新浪K线API的 `scale` 参数含义：5=5分钟, 240=日线, 1200=周线, 7200=月线。**不要把 scale=5 当日线用**——scale=5 返回的是分分钟级别数据，不是日K线。
+
+**报告输出格式**：
+```
+### 缺口分析
+
+| 缺口方向 | 日期 | 区间 | 状态 | 距现价 | 角色 |
+|---------|------|------|------|--------|------|
+| 向上 | MM-DD→MM-DD | X.XX~X.XX | 未回补 | +X.X% | 支撑 |
+| 向下 | MM-DD→MM-DD | X.XX~X.XX | 未回补 | -X.X% | 压力 |
+
+缺口结构判断: [描述当前股价与关键缺口的关系]
+```
+
+详细方法论见 `references/gap-analysis-framework.md`。
+
 - 可关注：
   - 趋势类
   - 动量类
@@ -877,6 +991,33 @@ python3 "/Users/penghongming/agent-skills/custom/stock-deep-analysis/scripts/det
 - 如果不适合买入，应该等什么信号
 - 如果可以买，风险位和失效条件是什么
 
+### Step 14: 交易决策推演（2026-06-12 新增 — 用户提问时激活）
+
+**触发条件**：当用户提出以下类型问题时，必须激活本模块：
+- "能不能买/入/上"
+- "如果守住XX支撑，可以入场吗"
+- "什么位置可以接"
+- "要不要跑/走/割"
+- "现在该怎么操作"
+
+**核心原则：不要只给方向性判断（偏多/偏空），必须给出结构化的操作方案。**
+
+详细方法论见 `references/trade-decision-playbook.md`，核心要点：
+
+1. **当前位置定位**：当前价 vs 支撑位 vs 压力位，计算缓冲空间和反弹空间
+2. **支撑/压力体系**：缺口 > 前高前低 > 均线 > 筹码密集区 > 整数关口（缺口优先于均线）
+3. **至少两套入场方案**：
+   - 方案A(激进): 触及支撑即入，成本好但确认性弱
+   - 方案B(稳健): 确认支撑有效后入，确认性强但成本高
+4. **盈亏比计算（必须输出表格）**：
+   - 盈亏比 = (目标价 - 入场价) / (入场价 - 止损价)
+   - ≥ 2:1 才值得做，≥ 3:1 为优秀
+5. **多空因素对比**：必须同时列出多头和空头因素，不能只说一边
+6. **确认信号 vs 失效信号**：明确什么情况下入场、什么情况下放弃/止损
+7. **仓位与风控**：试探仓≤2成，确认后≤3成，总仓位≤5成（趋势偏空时）
+8. **止盈分档**：目标1减1/3 → 目标2减1/3 → 目标3清仓
+9. **综合建议必须明确分类**：✅可入场 / ⚠️可轻仓试探 / ⏸️观望等确认 / ❌不建议
+
 ## 输出要求
 
 - 优先使用 [references/report-template.md](references/report-template.md) 的结构。
@@ -918,10 +1059,18 @@ python3 "/Users/penghongming/agent-skills/custom/stock-deep-analysis/scripts/det
 | references/environment-fallback-playbook.md | 终端/浏览器/脚本超时时的标准回落链路 |
 | references/parquet-only-migration-2026-05-26.md | 本地数据统一 parquet-only 改造记录 |
 | references/limit-break-pattern.md | 涨停炸板分时分析判断框架 |
+| references/post-consecutive-limitup-analysis.md | 连板后断板分析框架：多日涨停后的首个回调日分析、板块背离度检测、游资撤退判断 |
 | references/eastmoney-longhu-extraction.md | 东方财富龙虎榜详细席位提取方法：概览API、明细页浏览器提取法、席位分析要点与常见陷阱 |
 | references/glass-substrate-packaging-technology.md | 玻璃基封装载板技术与A股产业链：NVIDIA→康宁→京东方叙事链、MOU评估方法、新业务公告评估清单、京东方Q1财务约束 |
 | references/corporate-governance-change-analysis.md | 公司治理变动分析框架 |
+| references/gap-analysis-framework.md | 缺口分析框架：缺口识别/分类/对峙格局/交易决策/实战案例/API scale陷阱 |
+| references/trade-decision-playbook.md | 交易决策推演框架：多场景入场方案/盈亏比计算/多空因素对比/确认信号/仓位风控 |
+| references/background-due-diligence.md | 风险背调框架：8大维度背调（诉讼/监管/质押/关联交易/财务/信披/环保/舆情）/快速背调流程 |
+| references/cross-sector-correlation-analysis.md | 跨板块相关性分析方法：多属性个股的分时相关性计算、板块跟随判断、两层相关性模型（日线+分时） |
+| references/moneyflow-analysis-framework.md | 个股资金流分析框架：东方财富API获取、分时段增量分析、超大单/大单行为差异、涨停炸板资金诊断、代码模板 |
+| references/split-order-detection.md | 拆单识别分析框架：笔均手数监控、中单异常放大检测、暗盘/明盘差值验证、东方财富tick data API、分时段拆单强度分析 |
 | references/concept-board-verification.md | 概念板块归属验证方法：查证个股是否属于某概念、常见概念边界混淆点（显示vs封装玻璃基板等）、情绪关联vs业务关联 |
 | references/parquet-column-pitfalls.md | 本地 parquet 实战列名陷阱：kdj_j_bfq→kdj_bfq、moneyflow date→trade_date、execute_code f-string 转义 |
+| references/api-only-analysis-workflow.md | 零本地数据时的纯API分析路径：股票在本地无任何parquet文件时，用腾讯API+新浪K线API完成完整深度分析的代码模板和流程 |
 | [CHANGELOG.md](CHANGELOG.md) | 更新记录 |
 

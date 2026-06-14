@@ -197,6 +197,51 @@ with open(path) as f:
    ```
    返回结果中包含当日最新价和日期字段，可用于与本地数据日期对比。
 3. **在报告中注明**：
+#### 东财 K 线 API 空响应时的新浪 fallback（2026-06-11 新增）
+
+`push2his.eastmoney.com/api/qt/stock/kline/get` 在代理清空环境下频繁返回 HTTP 200 但 body 为空，导致盘中 5 分钟 K 线数据获取失败。注意：这与 `push2.eastmoney.com/api/qt/stock/get`（实时行情）是**不同端点**，后者通常正常。
+
+**标准回落 — 新浪财经 K 线 API：**
+```bash
+# 5分钟K线（沪市 sh / 深市 sz，无分隔符）
+curl -s "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=sh600703&scale=5&ma=no&datalen=50"
+
+# 日K线（scale=240，用于本地日线 parquet 缺失时）
+curl -s "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=sh600703&scale=240&ma=no&datalen=60"
+```
+
+- 返回 JSON 数组，字段：`day/open/high/low/close/volume`
+- volume 单位为**股**（非手），区别于本地分钟 CSV 的手单位
+- 免费、无需认证，但有速率限制（建议间隔 3-5 秒）
+- `scale` 支持 5/15/30/60/240 分钟（240 = 日K线）
+- 日K线（scale=240）可直接替代本地 `daily/{code}.parquet` 做均线计算和近期结构分析
+- 详见 `references/data-sources.md` 中"新浪财经盘中5分钟K线API"小节
+
+#### 本地 parquet 完全缺失时的"零数据"场景（2026-06-11 新增）
+
+部分股票在 `~/quant-data/tushare/股票数据/` 下可能**完全没有** `daily/`、`stk_factor_pro/`、`cyq_perf/` 等 parquet 文件。这在非核心标的或新纳入观察的股票上较常见。
+
+**识别方法**：
+```bash
+ls ~/quant-data/tushare/股票数据/daily/{CODE}*.parquet 2>/dev/null
+# 空输出 = 该股票日线 parquet 完全缺失
+```
+
+**标准降级路径**（按优先级）：
+
+| 数据维度 | 首选方案 | 次选方案 |
+|---------|---------|---------|
+| 日线历史 | 新浪日K API (`scale=240`) | 腾讯 K 线 API (`web.ifzq.gtimg.cn`) |
+| 实时行情 | 腾讯快照 API (`qt.gtimg.cn`) | 新浪页面内嵌变量 |
+| 分时数据 | 新浪分钟 K 线 API (`scale=5`) | 浏览器读分时图 |
+| 技术因子 | 从新浪日K手动计算 MA/MACD | 跳过，标注数据缺失 |
+| 筹码分布 | 标注 `cyq_perf 缺失，筹码维度不可用` | 浏览器查同花顺筹码页 |
+| 资金流向 | 腾讯/新浪 API 无法提供 | 标注 `资金数据缺失` |
+| 融资融券 | 标注 `margin 数据缺失` | 浏览器查东方财富融资融券页 |
+
+**报告中的必写项**：当进入零数据模式时，报告开头必须写明：
+> `本地 parquet 数据对该股票完全缺失，分析基于新浪/腾讯 API 在线数据，技术因子为手动计算或标注缺失。`
+
 ## 快速决策卡
 
 | 失败场景 | 首选 fallback | 次选 fallback |
@@ -205,8 +250,26 @@ with open(path) as f:
 | 东方财富个股页出现 CAPTCHA | `execute_code` 直接调用 `http://qt.gtimg.cn` | 新浪财经页面内嵌变量 |
 | `get_quote_tencent.py` 无输出 | `execute_code` 直接调用 `http://qt.gtimg.cn` | 东方财富网页实时行情 |
 | `build_stock_report.py` 超时 | 串行单只执行 | 直接读本地分钟 CSV |
+| 东财 push2his K线 API 空响应 | **新浪K线API** (`scale=5`) → 本地分钟 CSV | 浏览器读分时图 |
 | `fetch_browser_news.py` 低质量 | 本地概念文件归因 | 东方财富 hxtc 页面 |
 | 沙箱无 pandas | 标准库 csv + collections | 字符串切片手工解析 |
 | 用户追问"报告在哪" | 立即补写 references/ + 测试对象池 | N/A（已属执行缺陷） |
 | `check_data_freshness.py` 日期解析失败 | `ls` 目录扫描 + 腾讯 API 验证 | 手动检查各数据文件 mtime |
+| `check_data_freshness.py` Python 3.9 报错 | `ls` 目录扫描 + 腾讯 API 验证 | 手动检查各数据文件 mtime |
 | `browser_navigate` socket 失败 | 清理残留进程后重试 | 降级至纯终端/execute_code 模式 |
+| **本地 parquet 完全缺失（零数据）** | **新浪日K API (`scale=240`)** + 腾讯快照 API | 标注数据缺失，仅用在线数据 |
+
+## 8. `check_data_freshness.py` Python 3.9 语法不兼容
+
+### 典型现象
+- 执行脚本时抛出 `TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'`
+- 错误位置：`data_access.py` 第 85 行 `def trade_cal_path() -> Path | None:`
+
+### 根因
+脚本内部使用了 Python 3.10+ 的类型联合语法（`Path | None`），但系统 Python 版本为 3.9，不支持此语法。
+
+### 标准回落
+与第 7 节相同：直接 `ls` 目录扫描 + 腾讯 API 验证时效性。
+
+### 补充说明
+该脚本的两个 bug（日期解析 + Python 版本兼容）可能导致脚本完全无法执行。遇到任一错误时，直接跳过该脚本，改用手动验证流程。

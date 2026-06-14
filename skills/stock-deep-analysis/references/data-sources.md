@@ -192,10 +192,74 @@ curl -s "https://push2.eastmoney.com/api/qt/stock/get?secid={market}.{code}&fiel
 
 | 数据类型 | 优先渠道 | 降级渠道 | 关键脚本 |
 |---|---|---|---|
-| 实时行情 | 浏览器 | 腾讯API | `hermes_browser_fetch.py`, `get_quote_tencent.py` |
+| **实时行情** | 浏览器 | 腾讯API | `hermes_browser_fetch.py`, `get_quote_tencent.py` |
 || 当日日线 | 本地 `daily/` (若T日已更新) | tushare_pro API 回填 → 腾讯API (若T日未更新) | `data_access.py` 内部回填 |
 | 当日分钟线 | 时段分策：盘中浏览器/API，午间/盘后先本地后浏览器 | 本地 `minute_kline.csv` | `fetch_minute_data.py`, `fetch_eastmoney_minute_kline.mjs` |
+| 5分钟K线(盘中) | 东财 push2his K线API | **新浪财经K线API** → 本地分钟CSV | 无专用脚本，直接 curl |
 | 历史分钟线 | 本地 `minute_kline.csv` | `minute_kline_5m/15m/30m/60m.csv` | `fetch_eastmoney_historical_intraday.py` |
+
+#### 新浪财经盘中5分钟K线API（2026-06-11 实战验证）
+
+当东方财富 `push2his.eastmoney.com/api/qt/stock/kline/get` 返回空响应时（HTTP 200 但 body 为空，常见于代理清空环境），新浪财经K线API是可靠的盘中5分钟K线fallback。
+
+**接口地址：**
+```
+https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol={code}&scale=5&ma=no&datalen=50
+```
+
+**参数说明：**
+- `code`: `sh600xxx`（沪市）或 `sz000xxx`（深市），注意格式与腾讯API不同（无分隔符）
+- `scale`: K线周期，`5`=5分钟，`15`=15分钟，`30`=30分钟，`60`=60分钟
+- `ma=no`: 不附加均线
+- `datalen`: 返回K线根数，盘中建议 `50`（覆盖全天240根5分钟线的大部分）
+
+**返回格式：** JSON 数组，每根K线包含 `day/open/high/low/close/volume` 字段。
+
+**示例调用：**
+```bash
+curl -s "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=sh600703&scale=5&ma=no&datalen=50"
+```
+
+**返回示例（单根K线）：**
+```json
+{"day":"2026-06-11 10:05:00","open":"15.32","high":"15.34","low":"15.10","close":"15.12","volume":"7994887"}
+```
+
+**注意事项：**
+- volume 字段单位为**股**（非手），计算成交额时需注意
+- `datalen=50` 在午间休盘时可覆盖上午全部K线，盘后建议增大到 `240`
+- 接口免费，无需认证，但有速率限制（建议间隔 3-5 秒）
+- 东财 push2his K线API 与东财 push2 实时行情API 是**不同端点**——push2 实时行情通常正常，push2his K线API 可能空响应
+
+**在降级链中的位置：**
+1. 本地分钟CSV（午间/盘后优先）
+2. 东财 push2his K线API
+3. **新浪财经K线API** ← 此处
+4. 浏览器导航个股页面读分时图
+
+#### 新浪财经周线/月线K线API（2026-06-12 新增）
+
+同一端点可获取周线和月线K线，仅 `scale` 参数不同。实战验证可靠。
+
+```bash
+# 周K线（scale=1200，返回约30-50周）
+curl -s "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=sz002583&scale=1200&ma=no&datalen=40"
+
+# 月K线（scale=7200，返回约30-36个月）
+curl -s "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=sz002583&scale=7200&ma=no&datalen=36"
+```
+
+**参数说明：**
+- `scale`: `1200` = 周K线，`7200` = 月K线（与5分钟 `scale=5` 同一端点）
+- `datalen`: 周线建议 `40`（覆盖约1年），月线建议 `36`（覆盖3年）
+- `symbol` 格式同5分钟K线：`sh600xxx`（沪）/ `sz000xxx`（深）
+
+**注意事项：**
+- volume 单位为**股**（非手），计算成交额需 `× 价格`
+- 本地 `weekly/` 和 `monthly/` parquet 文件优先使用（含更完整的历史数据）
+- 仅当本地 parquet 缺失或不可读时才降级到此 API
+- 接口免费无需认证，速率限制同5分钟K线（建议间隔 3-5 秒）
+
 | 开盘竞价 | `stk_auction_o` | `fetch_open_auction_eastmoney.py` | `fetch_open_auction.py`, `fetch_eastmoney_auction.py` [→auction-analysis] |
 | 收盘竞价 | `stk_auction_c` | `fetch_close_auction_eastmoney.py` | `fetch_close_auction.py`, `fetch_eastmoney_auction.py` [→auction-analysis] |
 | 竞价摘要 | `summarize_auction_strength.py` [→auction-analysis] | — | `summarize_auction_strength.py` [→auction-analysis] |
